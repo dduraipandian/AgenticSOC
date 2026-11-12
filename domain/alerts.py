@@ -1,11 +1,9 @@
 from datetime import UTC, datetime
 from ipaddress import IPv4Address
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
-
-from domain.errors import InvalidEDRSeverity
 
 Source = Literal["sentrix-edr"]
 
@@ -18,9 +16,9 @@ class Entities(_Model):
     ip: str | None
 
 class Ancestor(_Model):
-    cmd: str
-    user: str
-    pid: int
+    cmd: str | None
+    user: str | None
+    pid: int | None
 
 
 class Process(_Model):
@@ -59,42 +57,3 @@ class Alert(_Model):
     @classmethod
     def _to_utc(cls, value: datetime) -> datetime:
         return value.astimezone(UTC)
-
-    @staticmethod
-    def make_edr_alert(raw, **overrides) -> "Alert":
-        severity = raw["severity"]
-        if 1 <= severity <= 20:
-            severity = 1
-        elif 21 <= severity <= 40:
-            severity = 2
-        elif 41 <= severity <= 60:
-            severity = 3
-        elif 61 <= severity <= 80:
-            severity = 4
-        elif 81 <= severity <= 100:
-            severity = 5
-        else:
-            raise InvalidEDRSeverity(f"Invalid severity {severity}")
-
-        fields = dict(
-            alert_id=uuid4(),
-            source="sentrix-edr",
-            vendor_event_id=raw["id"],
-            alert_time=datetime.fromtimestamp(raw["ts_ms"] / 1000, tz=UTC),
-            severity=severity,
-            category=raw["name"],
-            technique=raw["technique"],
-            entities=Entities(host=raw["host"], user=raw["process"]["user"], ip=None),
-            process=Process(
-                cmd=raw["process"]["cmdline"],
-                user=raw["process"]["user"],
-                pid=raw["process"]["pid"],
-                parent_cmd=raw["process"]["parent_cmdline"],
-                ancestors=[Ancestor(cmd=a["cmdline"], user=a["user"], pid=a["pid"]) for a in raw["process"]["lineage"]],
-            ),
-            network=None,
-            file=FileAccess(path=raw["file"]["path"], mode=raw["file"]["op"]),
-            raw=raw,
-        )
-        fields.update(overrides)
-        return Alert(**fields)
