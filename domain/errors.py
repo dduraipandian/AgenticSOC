@@ -1,0 +1,2 @@
+class InvalidEDRSeverity(Exception):
+    pass
