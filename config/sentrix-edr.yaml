@@ -1,0 +1,9 @@
+puller:
+  enabled: true
+  url: http://localhost:8101
+  path: /v2/detections
+  limit: 100
+  api-key: feed-key
+  timeout: 10
+  retry_max_attempts: 10
+  wait_when_caughtup: 5
