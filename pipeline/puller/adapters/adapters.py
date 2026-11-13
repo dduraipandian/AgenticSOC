@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -21,16 +22,8 @@ class Page:
     more: bool
 
 
-class PullerRegistry:
-    adapters: ClassVar[dict[str, type["PullerRegistry"]]] = {}
-
-    def __init_subclass__(cls, name: str, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-        cls.name = name
-        cls.adapters[name] = cls
-
-
-class PullerAdapter:
+class PullerAdapter(ABC):
+    name: ClassVar[str]
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -41,7 +34,12 @@ class PullerAdapter:
         self.retry_max_attempts = self.config.get("retry_max_attempts", 10)
         self.wait_when_caughtup = self.config.get("wait_when_caughtup", 60)
 
-    def create_client(self):
+    @abstractmethod
+    def pull(self, client: httpx.Client, checkpoint: dict | None = None) -> Page:
+        """Fetch one page starting from the supplied checkpoint."""
+        ...
+
+    def create_client(self) -> httpx.Client:
         client = httpx.Client(base_url=self.url, headers=self._get_headers(), timeout=self.config.get("timeout", self.default_timeout))
         return client
 

@@ -8,7 +8,8 @@ import httpx
 
 from common.backoff import delays
 from config import config
-from pipeline.puller.adapters.adapters import Page, PullerRegistry, RateLimited, RawEvent, VendorError
+from pipeline.puller.adapters import ADAPTERS
+from pipeline.puller.adapters.adapters import Page, PullerAdapter, RateLimited, RawEvent, VendorError
 
 retriable_errors = (VendorError, httpx.HTTPError, httpx.TimeoutException, httpx.ConnectError)
 log = logging.getLogger("puller")
@@ -17,7 +18,7 @@ log = logging.getLogger("puller")
 class PullerMaxRetryAttempExhausted(Exception): ...
 class PullerUnrecoverableError(Exception): ...
 
-def pull_data(adapter_instance, adapter_name, client: httpx.Client) -> Generator[list[RawEvent]]:
+def pull_data(adapter_instance: PullerAdapter, adapter_name: str, client: httpx.Client) -> Generator[list[RawEvent]]:
     retry = 0
     data:  list[RawEvent] = []
     backoff = delays()
@@ -59,8 +60,6 @@ def save_events(events):
 def main():
     app_config = config.get_appconfig()
 
-    puller_adapter = PullerRegistry().adapters
-
     for adapter_name, adapter_config in app_config.items():
         if "puller" not in adapter_config:
             continue
@@ -70,10 +69,10 @@ def main():
         if not puller_config.get("enabled"):
             continue
 
-        if adapter_name not in puller_adapter:
+        if adapter_name not in ADAPTERS:
             continue
 
-        adapter_cls = puller_adapter[adapter_name]
+        adapter_cls = ADAPTERS[adapter_name]
         adapter_instance = adapter_cls(puller_config)
 
         client = adapter_instance.create_client()

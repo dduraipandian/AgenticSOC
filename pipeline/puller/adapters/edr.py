@@ -1,9 +1,11 @@
 import httpx
 
-from pipeline.puller.adapters.adapters import Page, PullerAdapter, PullerRegistry, RawEvent
+from pipeline.puller.adapters.adapters import Page, PullerAdapter, RawEvent
 
 
-class EDR(PullerAdapter, PullerRegistry, name="sentrix-edr"):
+class EDR(PullerAdapter):
+    name = "sentrix-edr"
+
     def pull(self, client: httpx.Client, checkpoint: dict | None = None) -> Page:
         limit = self.config.get("limit", self.default_limit)
         cursor = checkpoint.get("cursor") if checkpoint else None
