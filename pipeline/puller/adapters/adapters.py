@@ -39,6 +39,9 @@ class PullerAdapter(ABC):
         """Fetch one page starting from the supplied checkpoint."""
         ...
 
+    def initial_checkpoint(self) -> dict:
+        return {"cursor": None}
+
     def create_client(self) -> httpx.Client:
         client = httpx.Client(base_url=self.url, headers=self._get_headers(), timeout=self.config.get("timeout", self.default_timeout))
         return client

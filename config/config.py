@@ -1,22 +1,25 @@
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
+from pydantic_settings import BaseSettings
 
 CONFIG_PATH = Path(__file__).parent
 
-APP_CONFIG = {}
-
-def get_appconfig() -> dict[str, Any]:
-    return APP_CONFIG
+class SystemSettings(BaseSettings):
+    database_url: str
 
 
-def load_config():
-    config_files =  list(CONFIG_PATH.glob("*.yaml")) +  list(CONFIG_PATH.glob("*.yml"))
-
-    for file_path in config_files:
-        with file_path.open("r", encoding="utf-8") as file:
-            APP_CONFIG[file_path.stem] = yaml.safe_load(file)
+@dataclass(frozen=True)
+class AppConfig:
+    settings: SystemSettings
+    adapters: dict[str, dict]
 
 
-load_config()
+def load_adapter_configs(path: Path):
+    config_files =  list(path.glob("*.yaml")) +  list(path.glob("*.yml"))
+    return {f.stem: yaml.safe_load(f.read_text()) for f in config_files}
+
+
+def load_config(path: Path = CONFIG_PATH) -> AppConfig:
+    return AppConfig(settings=SystemSettings(), adapters=load_adapter_configs(path))

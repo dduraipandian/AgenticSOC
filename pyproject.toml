@@ -9,6 +9,8 @@ dependencies = [
     "pydantic[email,timezone]>=2.7",
     "pydantic-settings>=2.4",
     "fastapi>=0.115",
+    "psycopg[binary,pool]>=3.3.9",
+    "pyyaml>=6.0.3",
 ]
 
 [dependency-groups]
