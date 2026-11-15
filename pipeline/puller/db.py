@@ -25,7 +25,7 @@ class PullerEventStore:
     def save_many(self, conn, events: list[RawEvent]) -> None:
         raw_events = [(e.source, e.vendor_event_id, Jsonb(e.payload))for e in events]
         with conn.cursor() as cur:
-            cur.executemany("""INSERT INTO pipeline.puller_raw_events
+            cur.executemany("""INSERT INTO pipeline.raw_events
                             (source, vendor_event_id, event) VALUES (%s, %s, %s)
                             ON CONFLICT ON CONSTRAINT unique_source_event DO NOTHING;
                             """,

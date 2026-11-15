@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -11,6 +12,7 @@ from domain.errors import InvalidEDRSeverity
 from pipeline.events.edr import EDR
 
 FIXTURES = Path(__file__).parent / "fixtures"
+ALERT_ID = UUID("019a8b2e-7c41-7d3a-9f10-2b6c8e4d5a01")
 
 
 @pytest.fixture
@@ -27,8 +29,9 @@ def beacon_detection(s6_detection):
 
 
 def test_s6_detection_maps_to_alert(s6_detection):
-    alert = EDR(s6_detection).alert()
+    alert = EDR(ALERT_ID, s6_detection).alert()
 
+    assert alert.alert_id == ALERT_ID  # comes from the raw row, not made here
     assert alert.source == "sentrix-edr"
     assert alert.vendor_event_id == "det-1"
     assert alert.category == "sensitive_file_read"
@@ -52,7 +55,7 @@ def test_s6_detection_maps_to_alert(s6_detection):
 def test_edr_severity_maps_to_1_to_5(s6_detection, edr_severity, expected):
     s6_detection["severity"] = edr_severity
 
-    assert EDR(s6_detection).alert().severity == expected
+    assert EDR(ALERT_ID, s6_detection).alert().severity == expected
 
 
 
@@ -60,4 +63,4 @@ def test_edr_severity_maps_to_1_to_5(s6_detection, edr_severity, expected):
 def test_rejects_edr_severity_outside_0_to_100(s6_detection, edr_severity):
     s6_detection["severity"] = edr_severity
     with pytest.raises(InvalidEDRSeverity):
-        EDR(s6_detection).alert()
+        EDR(ALERT_ID, s6_detection).alert()

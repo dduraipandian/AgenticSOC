@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID
 
 from domain.alerts import Alert, Ancestor, Entities, FileAccess, Network, Process
 from domain.errors import InvalidEDRSeverity
 
 
 class EDR:
-    def __init__(self, raw: dict):
+    def __init__(self, alert_id: UUID, raw: dict):
         self.raw = raw
+        self.alert_id = alert_id
         self._alert : Alert | None = None
 
     def alert(self) -> Alert:
@@ -29,7 +30,7 @@ class EDR:
         net, file = self.raw.get("net"), self.raw.get("file")
 
         fields = dict(
-            alert_id=uuid4(),
+            alert_id=self.alert_id,
             source="sentrix-edr",
             vendor_event_id=self.raw["id"],
             alert_time=datetime.fromtimestamp(self.raw["ts_ms"] / 1000, tz=UTC),

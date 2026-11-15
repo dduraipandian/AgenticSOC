@@ -7,6 +7,7 @@ Alert to start from, so we let the EDR normaliser build one and then change sing
 import datetime
 import json
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +16,7 @@ from domain.alerts import Alert, FileAccess, Network
 from pipeline.events.edr import EDR
 
 FIXTURE_S6 = Path(__file__).parent / "fixtures" / "s6.json"
+ALERT_ID = UUID("019a8b2e-7c41-7d3a-9f10-2b6c8e4d5a01")
 
 
 @pytest.fixture
@@ -24,7 +26,7 @@ def s6_detection():
 
 def make_edr_alert(raw, **overrides) -> Alert:
     """A valid Alert from the EDR normaliser, with some fields replaced."""
-    fields = EDR(raw).alert().model_dump()
+    fields = EDR(ALERT_ID, raw).alert().model_dump()
     fields.update(overrides)
     return Alert(**fields)
 
