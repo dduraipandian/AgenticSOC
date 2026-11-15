@@ -11,3 +11,8 @@ normalizer:
   enabled: true
   batch_size: 100
   wait_when_caughtup: 5
+cases:
+  enabled: true
+  batch_size: 100
+  wait_when_caughtup: 5
+  window_minutes: 30
