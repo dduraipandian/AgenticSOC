@@ -8,8 +8,8 @@ from uuid import UUID
 import pytest
 
 from domain.alerts import Entities, FileAccess
-from domain.errors import InvalidEDRSeverity
-from pipeline.events.edr import EDR
+from domain.errors import InvalidEDREvent, InvalidEDRSeverity
+from pipeline.alerts.edr import EDR
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ALERT_ID = UUID("019a8b2e-7c41-7d3a-9f10-2b6c8e4d5a01")
@@ -64,3 +64,8 @@ def test_rejects_edr_severity_outside_0_to_100(s6_detection, edr_severity):
     s6_detection["severity"] = edr_severity
     with pytest.raises(InvalidEDRSeverity):
         EDR(ALERT_ID, s6_detection).alert()
+
+
+def test_rejects_detection_that_is_not_an_object():
+    with pytest.raises(InvalidEDREvent):
+        EDR(ALERT_ID, ["not", "a", "detection"]).alert()

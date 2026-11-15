@@ -3,6 +3,7 @@ import math
 from contextlib import contextmanager
 
 import httpx
+import psycopg
 import pytest
 
 from pipeline.puller.adapters.adapters import AuthError, RawEvent
@@ -53,7 +54,7 @@ class FakeEventStore:
     def save_many(self, conn, events):
         bad = [e.vendor_event_id for e in events if e.vendor_event_id in self.bad_ids]
         if bad:
-            raise ValueError(f"bad payload {bad[0]}")
+            raise psycopg.DataError(f"bad payload {bad[0]}")
         for e in events:
             self.raw.setdefault((e.source, e.vendor_event_id), e.payload)  # duplicates ignored
 

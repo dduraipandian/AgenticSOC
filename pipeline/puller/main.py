@@ -5,6 +5,7 @@ from time import sleep
 from typing import Any
 
 import httpx
+import psycopg
 from psycopg_pool import ConnectionPool
 
 from common.backoff import delays
@@ -69,13 +70,13 @@ def save_events(adapter_name: str, pool: ConnectionPool, checkpoint_store: Check
                 try:
                     with conn.transaction():
                         puller_store.save_many(conn, events)
-                except Exception: # noqa: BLE001
+                except psycopg.Error:
                     error_records = []
                     for e in events:
                         try:
                             with conn.transaction():
                                 puller_store.save_many(conn, [e])
-                        except Exception as exc1:  # noqa: BLE001
+                        except psycopg.Error as exc1:
                             error_records.append((e, str(exc1)))
 
                     puller_store.save_failures(conn, error_records)
@@ -96,7 +97,7 @@ def main():
 
         puller_config: dict[str, Any] = adapter_config["puller"]
 
-        if not puller_config.get("enabled"):
+        if puller_config.get("enabled") == False:
             continue
 
         if adapter_name not in ADAPTERS:

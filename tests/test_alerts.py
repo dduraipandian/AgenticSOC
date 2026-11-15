@@ -13,7 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from domain.alerts import Alert, FileAccess, Network
-from pipeline.events.edr import EDR
+from pipeline.alerts.edr import EDR
 
 FIXTURE_S6 = Path(__file__).parent / "fixtures" / "s6.json"
 ALERT_ID = UUID("019a8b2e-7c41-7d3a-9f10-2b6c8e4d5a01")

@@ -7,3 +7,7 @@ puller:
   timeout: 10
   retry_max_attempts: 10
   wait_when_caughtup: 5
+normalizer:
+  enabled: true
+  batch_size: 100
+  wait_when_caughtup: 5
