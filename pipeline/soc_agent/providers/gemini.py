@@ -8,29 +8,16 @@ from pipeline.soc_agent.tools.tools import Tool
 
 
 class Gemini(Provider):
-    def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, tools: list[Tool]):
-        super().__init__(model, system_prompt, reasoning_level, tools)
-        self._tools = None
-        self._config = None
+    def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
+        super().__init__(model, system_prompt, reasoning_level, **kwargs)
         self._client = None
 
-    @property
-    def tools(self):
-        if not self._tools:
-            _tools = [types.FunctionDeclaration(**self.get_tool_definition(t)) for t in self._tool_list]
-            self._tools = [types.Tool(function_declarations=_tools)]
+    def get_tools(self, tools: list[Tool]) -> list[types.Tool]:
+        _tools = [types.FunctionDeclaration(**self.get_tool_definition(t)) for t in tools]
+        return [types.Tool(function_declarations=_tools)]
 
-        return self._tools
-
-    @property
-    def config(self):
-        if not self._config:
-            self._config = types.GenerateContentConfig(
-                system_instruction=self.system_prompt,
-                tools=self._tools
-            )
-
-        return self._config
+    def get_config(self, tools: list[types.Tool]):
+        return types.GenerateContentConfig(system_instruction=self.system_prompt, tools=tools)
 
     @property
     def client(self):
@@ -46,24 +33,21 @@ class Gemini(Provider):
                 "parameters_json_schema": tool.parameters
             }
 
-    def generate(self):
+    def generate(self, tools: list[types.Tool]):
         return self.client.models.generate_content(model=self.model,
                                                     contents=self.history,
-                                                    config=self.config)
+                                                    config=self.get_config(tools))
 
     def get_response_text(self, response: types.GenerateContentResponse) -> str | None:
-        if not response:
-            return None
-
         return response.text
 
-    def append_history(self, role: str, content: Any):
-        self.history.append(types.Content(role=role, parts=[types.Part(text=content)]))
+    def append_history(self, history: list, role: str, content: Any):
+        history.append(types.Content(role=role, parts=[types.Part(text=content)]))
+
+    def append_response_to_history(self, history: list,  role: str, response: types.GenerateContentResponse):
+        self.append_history(history, role, response.candidates[0].content)
 
     def get_function_calls(self, response: types.GenerateContentResponse) -> list:
-        if not response:
-            return []
-
         return response.function_calls or []
 
     def get_function_details(self, function_call) -> tuple[str, dict]:

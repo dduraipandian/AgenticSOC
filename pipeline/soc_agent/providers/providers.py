@@ -8,15 +8,14 @@ REASONING_LEVEL = Literal["HIGH", "LOW"]
 
 
 class Provider:
-    def __init__(self,  model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, tools: list[Tool]):
-        self._tool_list = tools
+    def __init__(self,  model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
         self.model = model
         self.system_prompt = system_prompt
         self.history = []
+        self.provider_config = kwargs
 
-    @property
     @abstractmethod
-    def tools(self):
+    def get_tools(self, tools: list[Tool]):
         raise NotImplementedError()
 
     @abstractmethod
@@ -28,15 +27,20 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
-    def generate(self):
+    def generate(self, tools: Any):
         raise NotImplementedError()
 
     @abstractmethod
     def execute(self, question):
         raise NotImplementedError()
 
-    def append_history(self, role: str, content: Any):
-        self.history.append(content)
+    @abstractmethod
+    def append_history(self, history:list, role: str, content: Any):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def append_response_to_history(self,  history: list, role: str, response: Any):
+        raise NotImplementedError()
 
     @abstractmethod
     def get_response_text(self, response) -> str | None:

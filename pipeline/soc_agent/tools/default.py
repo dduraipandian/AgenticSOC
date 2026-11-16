@@ -9,7 +9,7 @@ parameters=InputSchema(
         "verdict": {"type": "string"}
     },
     required = ["evidence", "verdict"]
-),
+)
 
 
 @ToolFunction()(parameters=parameters)

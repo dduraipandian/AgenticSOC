@@ -1,7 +1,11 @@
+import logging
+
 from pipeline.soc_agent.providers.providers import Provider
 from pipeline.soc_agent.tools.tools import Tool
 
-MAX_STEPS = 5
+log = logging.getLogger("agent")
+
+MAX_ITERATION = 5
 
 class AgentRuntimeError(Exception): ...
 
@@ -9,28 +13,37 @@ class Agent:
     def __init__(self, tools: dict[str, Tool], provider: Provider, **kwargs):
         self.tools = tools
         self.provider = provider
-        self.max_steps = kwargs.get("MAX_STEPS", MAX_STEPS)
-        # self.provider = provider_cls(system_prompt, reasoning_level, tools)
+        self.options = kwargs
 
     def execute_tool(self, name: str, args: dict) -> dict:
         tool_config = self.tools.get(name)
         func = tool_config.function if tool_config else None
         if func and callable(func):
-            return func(**args)
+            try:
+                return func(**args)
+            except Exception:
+                log.exception("failed to execute tool %s", name)
+                return {"error": f"failed to execute tool {name}"}
 
-        raise ValueError(f"Unknown tool: {name}")
+        return {"error": f"Unknown tool: {name}"}
 
     def execute(self, question: str, role: str = "user"):
-        self.provider.append_history(role, question)
-        for step in range(self.max_steps):
+        history = []
+        tools = self.provider.get_tools(list(self.tools.values()))
+        self.provider.append_history(history, role, question)
+
+        max_iteration = self.provider.provider_config.get("max_iteration")
+        max_iteration = max_iteration or self.options.get("max_iteration", MAX_ITERATION)
+
+        for step in range(max_iteration):
             print(f"executing step {step}")
-            response = self.provider.generate()
+            response = self.provider.generate(tools)
             function_calls = self.provider.get_function_calls(response)
 
             if not function_calls:
                 return self.provider.get_response_text(response)
 
-            self.provider.append_history(role, response.candidates[0].content)
+            self.provider.append_history(history, role, response)
 
             function_response_parts = []
 
@@ -41,6 +54,6 @@ class Agent:
                 formatted_response = self.provider.get_function_response(function_call, {"untrusted_data": function_response})
                 function_response_parts.append(formatted_response)
 
-            self.provider.append_history(role, function_response_parts)
+            self.provider.append_history(history, role, function_response_parts)
 
         raise AgentRuntimeError("Agent step limit reached")
