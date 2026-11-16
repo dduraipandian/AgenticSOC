@@ -1,5 +1,7 @@
 agent:
   max_iteration: 5
+  trace: true
+  trace_streaming: false
 providers:
   gemini:
     max_iteration: 5

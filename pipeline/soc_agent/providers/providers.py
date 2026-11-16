@@ -1,10 +1,18 @@
-
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pipeline.soc_agent.tools.tools import Tool
 
 REASONING_LEVEL = Literal["HIGH", "LOW"]
+
+
+@dataclass(frozen=True, slots=True)
+class TokenUsage:
+    prompt_token_count: int = 0
+    output_token_count: int = 0
+    thoughts_token_count: int = 0
+    total_token_count: int = 0
 
 
 class Provider:
@@ -54,5 +62,13 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
+    def get_all_function_names(self, function_calls) ->list[str]:
+        raise NotImplementedError()
+
+    @abstractmethod
     def get_function_response(self, function_call, response):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_response_metadata(self, response: Any) -> TokenUsage:
         raise NotImplementedError()

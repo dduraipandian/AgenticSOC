@@ -3,7 +3,7 @@ from typing import Any
 from google import genai
 from google.genai import types
 
-from pipeline.soc_agent.providers.providers import REASONING_LEVEL, Provider
+from pipeline.soc_agent.providers.providers import REASONING_LEVEL, Provider, TokenUsage
 from pipeline.soc_agent.tools.tools import Tool
 
 
@@ -58,8 +58,24 @@ class Gemini(Provider):
     def get_function_details(self, function_call) -> tuple[str, dict]:
         return function_call.name, function_call.args
 
+    def get_all_function_names(self, function_calls) -> list[str]:
+        return [f.name for f in function_calls]
+
     def get_function_response(self, function_call, response):
         return types.Part.from_function_response(
                     name=function_call.name,
                     response=response
                 )
+
+    def get_response_metadata(self, response: types.GenerateContentResponse) -> TokenUsage:
+        if not response.usage_metadata:
+            return TokenUsage()
+
+        usage_metadata = response.usage_metadata
+        usage = {
+            "prompt_token_count": usage_metadata.prompt_token_count or 0,
+            "output_token_count": usage_metadata.candidates_token_count or 0,
+            "thoughts_token_count": usage_metadata.thoughts_token_count or 0,
+            "total_token_count": usage_metadata.total_token_count or 0
+        }
+        return TokenUsage(**usage)
