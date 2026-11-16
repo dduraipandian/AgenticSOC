@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from collections.abc import Generator
 from datetime import timedelta
 from time import sleep
@@ -10,12 +11,13 @@ from common.db import make_pool
 from config import config
 from pipeline.cases.db import AlertReader, AlertRow, CaseCheckpointStore, CaseStore
 
-
 log = logging.getLogger("cases")
 
 BATCH_SIZE = 100
 WAIT_WHEN_CAUGHTUP = 5
-WINDOW_MINUTES = 30
+MAX_AGE = 180
+RELATED_AGE = MAX_AGE * 2
+MAX_ALERTS = 100
 
 
 def entity_key(alert: AlertRow) -> str | None:
@@ -28,14 +30,53 @@ def entity_key(alert: AlertRow) -> str | None:
     return None
 
 
-def add_to_case(conn, case_store: CaseStore, alert: AlertRow, window: timedelta) -> int:
-    key = entity_key(alert)
-    case_id = case_store.find_open(conn, key, alert.alert_time, window) if key else None
-    if case_id is None:
-        case_id = case_store.open_case(conn, key, alert)
+def group_alerts(alerts: list[AlertRow], max_age: timedelta,
+                 max_alerts: int) -> list[tuple[str | None, list[AlertRow]]]:
+    # one group per entity, in time order. A group is bounded like a case: it is split when an alert is more
+    # than max_age after the group's first alert, or when it has max_alerts alerts.
+    # an alert with no host and no user can't be grouped: it is a group of its own.
+    groups, by_key = [], defaultdict(list)
+    for alert in alerts:
+        key = entity_key(alert)
+        if key is None:
+            groups.append((None, [alert]))
+        else:
+            by_key[key].append(alert)
 
-    case_store.add_alert(conn, case_id, alert)
-    return case_id
+    for key, key_alerts in by_key.items():
+        key_alerts.sort(key=lambda a: a.alert_time)
+        group = [key_alerts[0]]
+        for alert in key_alerts[1:]:
+            if alert.alert_time - group[0].alert_time > max_age or len(group) == max_alerts:
+                groups.append((key, group))
+                group = []
+            group.append(alert)
+        groups.append((key, group))
+
+    return groups
+
+
+def add_to_case(conn, case_store: CaseStore, key: str | None, alerts: list[AlertRow],
+                max_age: timedelta, max_alerts: int, related_age: timedelta) -> None:
+    # every group asks the DB, not only the first of an entity: a case can have alerts later than this batch
+    related_case_id = None
+    case = case_store.find_open(conn, key, alerts[0].alert_time, alerts[-1].alert_time,
+                                max_age, max_alerts) if key else None
+    if case:
+        # the case takes what it has room for. The rest go to a new case, related to this one
+        case_id, alert_count = case
+        room = max_alerts - alert_count
+        case_store.add_alerts(conn, case_id, alerts[:room])
+        alerts, related_case_id = alerts[room:], case_id
+
+    if not alerts:
+        return
+
+    if related_case_id is None and key:
+        related_case_id = case_store.find_related(conn, key, alerts[0].alert_time, related_age)
+
+    case_id = case_store.open_case(conn, key, alerts[0], related_case_id)
+    case_store.add_alerts(conn, case_id, alerts)
 
 
 def read_alerts(source: str,
@@ -61,15 +102,18 @@ def read_alerts(source: str,
 
 def build_cases(source: str, pool: ConnectionPool, checkpoint_store: CaseCheckpointStore, case_store: CaseStore,
                 alert_gen, case_config):
-    window = timedelta(minutes=case_config.get("window_minutes", WINDOW_MINUTES))
+    # IMPORTANT: bounded cases. An unbounded case is too much for one investigation;
+    # a case that is full or too old gets a new case, linked to it through related_case_ids.
+    max_age = timedelta(minutes=case_config.get("max_age", MAX_AGE))
+    related_age = timedelta(minutes=case_config.get("related_age", RELATED_AGE))
+    max_alerts = case_config.get("max_alerts", MAX_ALERTS)
 
     for alerts, checkpoint in alert_gen:
-        # one transaction per batch: an alert later in the batch sees the case an earlier one opened
+        # one transaction per batch: a group later in the batch sees the case an earlier one opened.
+        # grouped first, so the DB work grows with the cases a batch touches, not with its alerts
         with pool.connection() as conn, conn.transaction():
-            # IMPORTANT: this will have performance problem.
-            # group cases in batch first then from the DB
-            for alert in alerts:
-                add_to_case(conn, case_store, alert, window)
+            for key, group in group_alerts(alerts, max_age, max_alerts):
+                add_to_case(conn, case_store, key, group, max_age, max_alerts, related_age)
 
             checkpoint_store.save(conn, source, checkpoint)
 

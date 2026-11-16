@@ -15,4 +15,6 @@ cases:
   enabled: true
   batch_size: 100
   wait_when_caughtup: 5
-  window_minutes: 30
+  max_age: 180
+  max_alerts: 100
+  related_age: 360

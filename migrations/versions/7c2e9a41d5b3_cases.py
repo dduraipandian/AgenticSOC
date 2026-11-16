@@ -17,8 +17,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # the case builder reads alerts in the order they were written. alert_id is the raw event's uuid7,
-    # so it is the puller's order, not this table's.
     op.execute("""ALTER TABLE pipeline.alerts ADD COLUMN id BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE;""")
 
     # -- IMPORTANT: this method is safe for one writer/reader per source

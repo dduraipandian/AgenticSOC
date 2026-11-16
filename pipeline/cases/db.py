@@ -46,36 +46,73 @@ class AlertReader:
 
 class CaseStore:
 
+    # An open case with room, that stays within max_age from its first to its last alert after the group
+    # [first, last] joins it. Returns (case_id, alert_count).
     # FOR UPDATE: the case is locked until the batch commits, so nothing else changes it in between.
     # It does not stop two sources from opening two cases for the same entity at the same time.
-    def find_open(self, conn, entity_key: str, alert_time: datetime, window: timedelta) -> int | None:
-        row = conn.execute("""SELECT case_id FROM pipeline.cases
-                                WHERE status = 'open' AND entity_key = %s AND last_alert_at >= %s
-                                ORDER BY last_alert_at DESC LIMIT 1
+    def find_open(self, conn, entity_key: str, first: datetime, last: datetime,
+                  max_age: timedelta, max_alerts: int) -> tuple[int, int] | None:
+        return conn.execute("""SELECT case_id, alert_count FROM pipeline.cases
+                                WHERE status = 'open' AND entity_key = %(key)s
+                                  AND alert_count < %(max_alerts)s
+                                  AND first_alert_at >= %(last)s - %(max_age)s
+                                  AND last_alert_at <= %(first)s + %(max_age)s
+                                  AND last_alert_at - first_alert_at <= %(max_age)s
+                                ORDER BY first_alert_at DESC LIMIT 1
                                 FOR UPDATE""",
-                            (entity_key, alert_time - window)).fetchone()
+                            dict(key=entity_key, first=first, last=last, max_age=max_age,
+                                 max_alerts=max_alerts)).fetchone()
+
+    # The entity's latest case, open or closed, if it was active within max_age of this alert:
+    # the case that was full, or the one an analyst closed shortly before.
+    def find_related(self, conn, entity_key: str, alert_time: datetime, related_age: timedelta) -> int | None:
+        row = conn.execute("""SELECT case_id FROM pipeline.cases
+                                WHERE entity_key = %(entity_key)s
+                                AND last_alert_at >= %(alert_time)s - %(related_age)s
+                                AND first_alert_at <= %(alert_time)s + %(related_age)s
+                                ORDER BY last_alert_at DESC LIMIT 1""",
+                            dict(entity_key=entity_key, alert_time=alert_time, related_age=related_age)
+                        ).fetchone()
         return row[0] if row else None
 
-    def open_case(self, conn, entity_key: str | None, alert: AlertRow) -> int:
-        row = conn.execute("""INSERT INTO pipeline.cases (entity_key, severity, last_alert_at)
-                                VALUES (%s, %s, %s) RETURNING case_id""",
-                            (entity_key, alert.severity, alert.alert_time)).fetchone()
+    def open_case(self, conn, entity_key: str | None, alert: AlertRow, related_case_id: int | None) -> int:
+        row = conn.execute("""INSERT INTO pipeline.cases
+                                (entity_key, severity, first_alert_at, last_alert_at, related_case_ids)
+                                VALUES (%s, %s, %s, %s, %s) RETURNING case_id""",
+                            (entity_key, alert.severity, alert.alert_time, alert.alert_time,
+                             [related_case_id] if related_case_id else [])).fetchone()
         return row[0]
 
-    def add_alert(self, conn, case_id: int, alert: AlertRow) -> None:
+    # one UPDATE for all the alerts of a group, so version goes up once per batch, not once per alert
+    def add_alerts(self, conn, case_id: int, alerts: list[AlertRow]) -> None:
+        severity, hosts, users, ips = 0, {}, {}, {}
+        first_alert_at = last_alert_at = alerts[0].alert_time
+        for a in alerts:
+            severity = max(severity, a.severity)
+            first_alert_at = min(first_alert_at, a.alert_time)
+            last_alert_at = max(last_alert_at, a.alert_time)
+            if a.host:
+                hosts[a.host] = None
+            if a.user_name:
+                users[a.user_name] = None
+            if a.ip:
+                ips[a.ip] = None
+
         conn.execute("""UPDATE pipeline.cases SET
                             severity = GREATEST(severity, %(severity)s),
-                            hosts = CASE WHEN %(host)s::text IS NULL OR %(host)s::text = ANY(hosts) THEN hosts
-                                         ELSE array_append(hosts, %(host)s::text) END,
-                            users = CASE WHEN %(user)s::text IS NULL OR %(user)s::text = ANY(users) THEN users
-                                         ELSE array_append(users, %(user)s::text) END,
-                            ips = CASE WHEN %(ip)s::text IS NULL OR %(ip)s::text = ANY(ips) THEN ips
-                                       ELSE array_append(ips, %(ip)s::text) END,
-                            last_alert_at = GREATEST(last_alert_at, %(alert_time)s),
+                            hosts = hosts || ARRAY(SELECT v FROM unnest(%(hosts)s::text[]) v WHERE v <> ALL(hosts)),
+                            users = users || ARRAY(SELECT v FROM unnest(%(users)s::text[]) v WHERE v <> ALL(users)),
+                            ips = ips || ARRAY(SELECT v FROM unnest(%(ips)s::text[]) v WHERE v <> ALL(ips)),
+                            first_alert_at = LEAST(first_alert_at, %(first_alert_at)s),
+                            last_alert_at = GREATEST(last_alert_at, %(last_alert_at)s),
+                            alert_count = alert_count + %(alert_count)s,
                             version = version + 1,
                             updated_at = now()
                         WHERE case_id = %(case_id)s""",
-                     dict(case_id=case_id, severity=alert.severity, host=alert.host, user=alert.user_name,
-                          ip=alert.ip, alert_time=alert.alert_time))
-        conn.execute("""INSERT INTO pipeline.case_alerts (alert_id, case_id) VALUES (%s, %s)""",
-                     (alert.alert_id, case_id))
+                     dict(case_id=case_id, severity=severity,
+                          hosts=list(hosts), users=list(users), ips=list(ips),
+                          first_alert_at=first_alert_at, last_alert_at=last_alert_at,
+                          alert_count=len(alerts)))
+        with conn.cursor() as cur:
+            cur.executemany("""INSERT INTO pipeline.case_alerts (alert_id, case_id) VALUES (%s, %s)""",
+                            [(a.alert_id, case_id) for a in alerts])

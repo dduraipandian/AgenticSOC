@@ -1,0 +1,5 @@
+max_iteration: 5
+providers:
+  gemini:
+    max_iteration: 5
+    GEMINI_MODEL: "models/gemini-3.5-flash-lite"
