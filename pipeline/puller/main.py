@@ -86,7 +86,7 @@ def save_events(adapter_name: str, pool: ConnectionPool, checkpoint_store: Check
 
 def main():
     app_config = config.load_config()
-    puller_pool = make_pool(app_config.settings.database_url)
+    puller_pool = make_pool(app_config.settings.DATABASE_URL)
 
     checkpoint_store = CheckpointStore()
     puller_store = PullerEventStore()

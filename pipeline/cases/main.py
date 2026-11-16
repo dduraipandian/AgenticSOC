@@ -120,7 +120,7 @@ def build_cases(source: str, pool: ConnectionPool, checkpoint_store: CaseCheckpo
 
 def main():
     app_config = config.load_config()
-    case_pool = make_pool(app_config.settings.database_url)
+    case_pool = make_pool(app_config.settings.DATABASE_URL)
 
     checkpoint_store = CaseCheckpointStore()
     reader = AlertReader()

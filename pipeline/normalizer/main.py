@@ -109,7 +109,7 @@ def save_alerts(source: str, pool: ConnectionPool, checkpoint_store: NormalizerC
 
 def main():
     app_config = config.load_config()
-    normalizer_pool = make_pool(app_config.settings.database_url)
+    normalizer_pool = make_pool(app_config.settings.DATABASE_URL)
 
     checkpoint_store = NormalizerCheckpointStore()
     reader = RawEventReader()

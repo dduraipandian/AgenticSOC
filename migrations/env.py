@@ -10,7 +10,7 @@ from config.config import SystemSettings
 # access to the values within the .ini file in use.
 config = context.config
 
-url = make_url(SystemSettings().database_url).set(drivername="postgresql+psycopg")
+url = make_url(SystemSettings().DATABASE_URL).set(drivername="postgresql+psycopg")
 config.set_main_option("sqlalchemy.url", url.render_as_string(hide_password=False).replace("%", "%%"))
 
 # Interpret the config file for Python logging.
