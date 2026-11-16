@@ -37,13 +37,13 @@ class Agent:
 
         for step in range(max_iteration):
             print(f"executing step {step}")
-            response = self.provider.generate(tools)
+            response = self.provider.generate(history, tools)
             function_calls = self.provider.get_function_calls(response)
 
             if not function_calls:
                 return self.provider.get_response_text(response)
 
-            self.provider.append_history(history, role, response)
+            self.provider.append_response_to_history(history, "model", response)
 
             function_response_parts = []
 

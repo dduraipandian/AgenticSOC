@@ -33,19 +33,24 @@ class Gemini(Provider):
                 "parameters_json_schema": tool.parameters
             }
 
-    def generate(self, tools: list[types.Tool]):
+    def generate(self, history: list, tools: list[types.Tool]):
         return self.client.models.generate_content(model=self.model,
-                                                    contents=self.history,
+                                                    contents=history,
                                                     config=self.get_config(tools))
 
     def get_response_text(self, response: types.GenerateContentResponse) -> str | None:
         return response.text
 
     def append_history(self, history: list, role: str, content: Any):
-        history.append(types.Content(role=role, parts=[types.Part(text=content)]))
+        if isinstance(content, str):
+            content = types.Content(role=role, parts=[types.Part(text=content)])
+        elif isinstance(content, list):
+            content = types.Content(role=role, parts=content)
+
+        history.append(content)
 
     def append_response_to_history(self, history: list,  role: str, response: types.GenerateContentResponse):
-        self.append_history(history, role, response.candidates[0].content)
+        history.append(response.candidates[0].content)
 
     def get_function_calls(self, response: types.GenerateContentResponse) -> list:
         return response.function_calls or []

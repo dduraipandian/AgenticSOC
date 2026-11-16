@@ -11,7 +11,6 @@ class Provider:
     def __init__(self,  model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
         self.model = model
         self.system_prompt = system_prompt
-        self.history = []
         self.provider_config = kwargs
 
     @abstractmethod
@@ -27,7 +26,7 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
-    def generate(self, tools: Any):
+    def generate(self, history: list, tools: Any):
         raise NotImplementedError()
 
     @abstractmethod
