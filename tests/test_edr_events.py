@@ -23,8 +23,14 @@ def s6_detection():
 @pytest.fixture
 def beacon_detection(s6_detection):
     raw = copy.deepcopy(s6_detection)
-    raw.update(id="det-2", name="connection_to_known_bad_ip", technique="T1071", severity=85,
-               net={"ip": "203.0.113.50", "port": 8443}, file=None)
+    raw.update(
+        id="det-2",
+        name="connection_to_known_bad_ip",
+        technique="T1071",
+        severity=85,
+        net={"ip": "203.0.113.50", "port": 8443},
+        file=None,
+    )
     return raw
 
 
@@ -49,14 +55,24 @@ def test_s6_detection_maps_to_alert(s6_detection):
     assert alert.raw == s6_detection
 
 
-@pytest.mark.parametrize("edr_severity, expected", [
-    (0, 1), (19, 1), (20, 2), (39, 2), (40, 3), (60, 4), (75, 4), (80, 5), (100, 5),
-])
+@pytest.mark.parametrize(
+    "edr_severity, expected",
+    [
+        (0, 1),
+        (19, 1),
+        (20, 2),
+        (39, 2),
+        (40, 3),
+        (60, 4),
+        (75, 4),
+        (80, 5),
+        (100, 5),
+    ],
+)
 def test_edr_severity_maps_to_1_to_5(s6_detection, edr_severity, expected):
     s6_detection["severity"] = edr_severity
 
     assert EDR(ALERT_ID, s6_detection).alert().severity == expected
-
 
 
 @pytest.mark.parametrize("edr_severity", [-1, 101])

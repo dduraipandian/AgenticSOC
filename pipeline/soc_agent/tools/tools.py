@@ -8,7 +8,11 @@ from pydantic import BaseModel, ConfigDict
 
 
 class DuplicateToolError(Exception): ...
+
+
 class ToolDescriptionNotFound(Exception): ...
+
+
 class ToolDefinitionError(Exception): ...
 
 
@@ -65,26 +69,20 @@ def validate_signature(args_model: type[ToolArgs], strict: bool = True):
             expected = model_hints[name]
 
             if (strict and actual != expected) or (actual is None or not is_subhint(expected, actual)):
-                raise ToolDefinitionError(
-                    f"{func.__name__}.{name}: "
-                    f"expected {expected}, got {actual}"
-                )
+                raise ToolDefinitionError(f"{func.__name__}.{name}: expected {expected}, got {actual}")
 
         return func
 
     return wrap
+
 
 def make_tool(func: Callable[..., dict], args_model: type[ToolArgs], description: str | None = None):
     description = description or func.__doc__
     if not description:
         raise ToolDescriptionNotFound(f"{func.__name__}: is missing a description")
 
-    return Tool(
-        name=func.__name__,
-        description=description.strip(),
-        args_model=args_model,
-        function=func
-    )
+    return Tool(name=func.__name__, description=description.strip(), args_model=args_model, function=func)
+
 
 def tool_map(tools: list[Tool]) -> dict[str, Tool]:
     by_name = {}

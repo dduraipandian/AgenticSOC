@@ -101,8 +101,8 @@ def test_replayed_page_is_not_a_failure():
     save_events(SOURCE, FakePool(), checkpoints, store, [(events("det-1", "det-2"), {"cursor": "c-2"})])
 
     assert sorted(store.raw) == [(SOURCE, "det-1"), (SOURCE, "det-2")]  # still one row each
-    assert store.failures == []                                        # a replay is not a failure
-    assert checkpoints.rows[SOURCE] == {"cursor": "c-2"}                # and the feed moves on
+    assert store.failures == []  # a replay is not a failure
+    assert checkpoints.rows[SOURCE] == {"cursor": "c-2"}  # and the feed moves on
 
 
 def test_poison_page_advances_the_checkpoint():
@@ -120,10 +120,12 @@ def test_one_bad_event_does_not_quarantine_the_whole_page():
     checkpoints = FakeCheckpointStore()
     store = FakeEventStore(bad_ids={"det-2"})
 
-    save_events(SOURCE, FakePool(), checkpoints, store, [(events("det-1", "det-2", "det-3"), {"cursor": "c-4"})])
+    save_events(
+        SOURCE, FakePool(), checkpoints, store, [(events("det-1", "det-2", "det-3"), {"cursor": "c-4"})]
+    )
 
-    assert sorted(store.raw) == [(SOURCE, "det-1"), (SOURCE, "det-3")]       # the good ones still land
-    assert [e.vendor_event_id for e, _ in store.failures] == ["det-2"]        # only the bad one is quarantined
+    assert sorted(store.raw) == [(SOURCE, "det-1"), (SOURCE, "det-3")]  # the good ones still land
+    assert [e.vendor_event_id for e, _ in store.failures] == ["det-2"]  # only the bad one is quarantined
     assert checkpoints.rows[SOURCE] == {"cursor": "c-4"}
 
 
@@ -146,7 +148,7 @@ def test_save_failures_stores_the_payload_as_json_text():
 
     [(source, event_id, event_text, error)] = conn.cur.params
     assert (source, event_id, error) == (SOURCE, None, "null id")
-    assert isinstance(event_text, str)                 # text column, not jsonb: NaN and \u0000 are fine here
+    assert isinstance(event_text, str)  # text column, not jsonb: NaN and \u0000 are fine here
     stored = json.loads(event_text)
     assert stored["id"] is None
     assert math.isnan(stored["score"])
@@ -166,5 +168,5 @@ def test_auth_error_stops_the_puller():
     with pytest.raises(PullerUnrecoverableError) as exc:
         next(loop)
 
-    assert len(seen) == 1                               # no retries for a wrong key
+    assert len(seen) == 1  # no retries for a wrong key
     assert isinstance(exc.value.__context__, AuthError)  # the original cause is kept

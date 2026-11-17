@@ -7,13 +7,16 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 Source = Literal["sentrix-edr"]
 
+
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
 
 class Entities(_Model):
     host: str | None
     user: str | None
     ip: str | None
+
 
 class Ancestor(_Model):
     cmd: str | None
@@ -37,6 +40,7 @@ class Network(_Model):
 class FileAccess(_Model):
     path: str
     mode: Literal["read", "write"]
+
 
 class Alert(_Model):
     schema_version: Literal["1"] = "1"

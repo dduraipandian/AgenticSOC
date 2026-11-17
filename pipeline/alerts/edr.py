@@ -13,12 +13,12 @@ class EDR:
     def __init__(self, alert_id: UUID, raw: dict):
         self.raw = raw
         self.alert_id = alert_id
-        self._alert : Alert | None = None
+        self._alert: Alert | None = None
 
     def alert(self) -> Alert:
         if not self._alert:
             self._validate()
-            self._alert  = self._make_alert()
+            self._alert = self._make_alert()
 
         return self._alert
 
@@ -88,9 +88,11 @@ class EDR:
         proc = self.raw.get("process")
         process = None
         if proc:
-            process = Process(cmd=proc.get("cmdline"),
-                                user=proc.get("user"),
-                                pid=proc.get("pid"),
-                                parent_cmd=proc.get("parent_cmdline"),
-                                ancestors=[self._get_ancestor(a) for a in (proc.get("lineage") or [])[:5]])
+            process = Process(
+                cmd=proc.get("cmdline"),
+                user=proc.get("user"),
+                pid=proc.get("pid"),
+                parent_cmd=proc.get("parent_cmdline"),
+                ancestors=[self._get_ancestor(a) for a in (proc.get("lineage") or [])[:5]],
+            )
         return process

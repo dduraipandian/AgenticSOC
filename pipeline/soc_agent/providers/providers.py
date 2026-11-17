@@ -16,7 +16,7 @@ class TokenUsage:
 
 
 class Provider:
-    def __init__(self,  model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
+    def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
         self.model = model
         self.system_prompt = system_prompt
         self.provider_config = kwargs
@@ -42,11 +42,11 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
-    def append_history(self, history:list, role: str, content: Any):
+    def append_history(self, history: list, role: str, content: Any):
         raise NotImplementedError()
 
     @abstractmethod
-    def append_response_to_history(self,  history: list, role: str, response: Any):
+    def append_response_to_history(self, history: list, role: str, response: Any):
         raise NotImplementedError()
 
     @abstractmethod
@@ -62,7 +62,7 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
-    def get_all_function_names(self, function_calls) ->list[str]:
+    def get_all_function_names(self, function_calls) -> list[str]:
         raise NotImplementedError()
 
     @abstractmethod

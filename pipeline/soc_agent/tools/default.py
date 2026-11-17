@@ -8,16 +8,25 @@ Verdict = Literal["malicious", "benign", "inconclusive"]
 
 
 class PrettyJsonArgs(ToolArgs):
-    evidence: dict = Field(description="Facts that support the verdict, e.g. {'parent_process': 'cron', 'user': 'svc-maint'}")
-    verdict: Verdict = Field(description="Your conclusion about the case. Use inconclusive if the evidence is not enough.")
+    verdict: Verdict = Field(
+        description="Your conclusion about the case. Use inconclusive if the evidence is not enough."
+    )
+    confidence: str
+    rationale: str
+    evidence: dict = Field(
+        description="Facts that support the verdict, e.g. {'parent_process': 'cron', 'user': 'svc-maint'}"
+    )
 
 
 @validate_signature(PrettyJsonArgs)
-def pretty_json(evidence: dict, verdict: Verdict) -> dict:
+def submit_investigation(
+    verdict: Verdict,
+    confidence: str,
+    rationale: str,
+    evidence: dict,
+) -> dict:
     """Format investigation evidence and verdict as a JSON object."""
-    return {
-        "evidence": evidence,
-        "verdict": verdict
-    }
+    return {"evidence": evidence, "verdict": verdict}
 
-PRETTY_JSON = make_tool(pretty_json, PrettyJsonArgs)
+
+SUBMIT_INVESTIGATION = make_tool(submit_investigation, PrettyJsonArgs)

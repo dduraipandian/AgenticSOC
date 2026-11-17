@@ -22,7 +22,9 @@ BATCH_SIZE = 100
 WAIT_WHEN_CAUGHTUP = 5
 
 
-def normalize_rows(source: str, rows: list[RawRow]) -> tuple[list[tuple[RawRow, Alert]], list[tuple[RawRow, str]]]:
+def normalize_rows(
+    source: str, rows: list[RawRow]
+) -> tuple[list[tuple[RawRow, Alert]], list[tuple[RawRow, str]]]:
     normalizer_cls = NORMALIZERS[source]
     alerts, failures = [], []
     for row in rows:
@@ -65,18 +67,22 @@ def normalize_rows(source: str, rows: list[RawRow]) -> tuple[list[tuple[RawRow, 
 #     return len(rows)
 
 
-def normalize_batch(source: str,
-                    pool: ConnectionPool,
-                    checkpoint_store: NormalizerCheckpointStore,
-                    reader: RawEventReader,
-                    normalizer_config) -> Generator[tuple[list[tuple[RawRow, Alert]], list[tuple[RawRow, str]], int]]:
+def normalize_batch(
+    source: str,
+    pool: ConnectionPool,
+    checkpoint_store: NormalizerCheckpointStore,
+    reader: RawEventReader,
+    normalizer_config,
+) -> Generator[tuple[list[tuple[RawRow, Alert]], list[tuple[RawRow, str]], int]]:
 
     with pool.connection() as conn:
         checkpoint = checkpoint_store.load(conn, source)
 
     while True:
         with pool.connection() as conn:
-            rows = reader.read_batch(conn, source, checkpoint, normalizer_config.get("batch_size", BATCH_SIZE))
+            rows = reader.read_batch(
+                conn, source, checkpoint, normalizer_config.get("batch_size", BATCH_SIZE)
+            )
 
         if not rows:
             sleep(normalizer_config.get("wait_when_caughtup", WAIT_WHEN_CAUGHTUP))
@@ -87,7 +93,13 @@ def normalize_batch(source: str,
         yield alerts, failures, checkpoint
 
 
-def save_alerts(source: str, pool: ConnectionPool, checkpoint_store: NormalizerCheckpointStore, alert_store: AlertStore, alert_gen):
+def save_alerts(
+    source: str,
+    pool: ConnectionPool,
+    checkpoint_store: NormalizerCheckpointStore,
+    alert_store: AlertStore,
+    alert_gen,
+):
     for alerts, failures, checkpoint in alert_gen:
         with pool.connection() as conn, conn.transaction():
             try:
@@ -104,7 +116,6 @@ def save_alerts(source: str, pool: ConnectionPool, checkpoint_store: NormalizerC
             alert_store.save_failures(conn, failures)
 
             checkpoint_store.save(conn, source, checkpoint)
-
 
 
 def main():
@@ -129,7 +140,6 @@ def main():
 
         alert_gen = normalize_batch(source, normalizer_pool, checkpoint_store, reader, normalizer_config)
         save_alerts(source, normalizer_pool, checkpoint_store, alert_store, alert_gen)
-
 
 
 if __name__ == "__main__":

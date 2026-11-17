@@ -50,13 +50,17 @@ def db(pool):
     return pool
 
 
-def add_alert(pool, minutes: int, severity: int = 3, host: str | None = "build-01", user: str | None = "svc-maint"):
+def add_alert(
+    pool, minutes: int, severity: int = 3, host: str | None = "build-01", user: str | None = "svc-maint"
+):
     with pool.connection() as conn:
-        conn.execute("""INSERT INTO pipeline.alerts
+        conn.execute(
+            """INSERT INTO pipeline.alerts
                         (alert_id, schema_version, source, vendor_event_id, alert_time, severity, category,
                          technique, host, user_name)
                         VALUES (%s, '1', %s, %s, %s, %s, 'sensitive_file_read', NULL, %s, %s)""",
-                     (uuid7(), SOURCE, f"det-{uuid7()}", T0 + timedelta(minutes=minutes), severity, host, user))
+            (uuid7(), SOURCE, f"det-{uuid7()}", T0 + timedelta(minutes=minutes), severity, host, user),
+        )
 
 
 def run(pool, case_store=None):
@@ -76,25 +80,35 @@ def cases(pool) -> list[tuple]:
     return [r[:6] for r in rows]
 
 
-def alert_row(row_id: int, minutes: int, host: str | None = "build-01", user: str | None = "svc-maint") -> AlertRow:
+def alert_row(
+    row_id: int, minutes: int, host: str | None = "build-01", user: str | None = "svc-maint"
+) -> AlertRow:
     return AlertRow(row_id, uuid7(), SOURCE, T0 + timedelta(minutes=minutes), 3, host, user, None)
 
 
 # --- critical ---------------------------------------------------------------------------------
 
+
 def test_batch_is_grouped_by_entity_and_bounded_like_a_case():
-    alerts = [alert_row(1, 20), alert_row(2, 0), alert_row(3, 10),
-              alert_row(4, 30),  # the 4th alert of build-01: the group has max_alerts already
-              alert_row(5, 95),  # 65 minutes after the group's first alert at 30
-              alert_row(6, 5, host="laptop-priya", user="priya.k"),
-              alert_row(7, 10, host=None, user=None)]
+    alerts = [
+        alert_row(1, 20),
+        alert_row(2, 0),
+        alert_row(3, 10),
+        alert_row(4, 30),  # the 4th alert of build-01: the group has max_alerts already
+        alert_row(5, 95),  # 65 minutes after the group's first alert at 30
+        alert_row(6, 5, host="laptop-priya", user="priya.k"),
+        alert_row(7, 10, host=None, user=None),
+    ]
 
     groups = group_alerts(alerts, timedelta(minutes=60), max_alerts=3)
 
     assert [(key, [a.id for a in group]) for key, group in groups] == [
         (None, [7]),
-        ("host:build-01", [2, 3, 1]), ("host:build-01", [4]), ("host:build-01", [5]),
-        ("host:laptop-priya", [6])]
+        ("host:build-01", [2, 3, 1]),
+        ("host:build-01", [4]),
+        ("host:build-01", [5]),
+        ("host:laptop-priya", [6]),
+    ]
 
 
 @integration
@@ -164,7 +178,10 @@ def test_a_case_older_than_max_minutes_opens_a_related_case(db):
     run(db)
 
     assert [(hosts, related) for _, hosts, _, _, _, related in cases(db)] == [
-        (["build-01"], []), (["build-01"], [1]), (["laptop-priya"], [])]  # another host is not related
+        (["build-01"], []),
+        (["build-01"], [1]),
+        (["laptop-priya"], []),
+    ]  # another host is not related
 
 
 @integration
@@ -221,5 +238,7 @@ def test_a_failed_batch_rolls_back_and_keeps_the_checkpoint(db):
         run(db, case_store=BrokenCaseStore())
 
     with db.connection() as conn:
-        assert conn.execute("SELECT count(*) FROM pipeline.cases").fetchone()[0] == 0  # the first group's case too
+        assert (
+            conn.execute("SELECT count(*) FROM pipeline.cases").fetchone()[0] == 0
+        )  # the first group's case too
         assert conn.execute("SELECT count(*) FROM pipeline.case_checkpoints").fetchone()[0] == 0

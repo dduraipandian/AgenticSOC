@@ -28,13 +28,20 @@ def client_with(*responses):
 
 def page(det_id="det-1", next_cursor="c-2", has_more=True):
     """A 200 response shaped like one page of /v2/detections."""
-    return httpx.Response(200, json={"detections": [{"id": det_id, "host": "build-01"}],
-                                     "next_cursor": next_cursor, "has_more": has_more})
+    return httpx.Response(
+        200,
+        json={
+            "detections": [{"id": det_id, "host": "build-01"}],
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        },
+    )
 
 
 def test_second_call_sends_the_cursor_from_the_first_page():
-    client, seen = client_with(page("det-1", next_cursor="c-2"),
-                               page("det-2", next_cursor="c-3", has_more=False))
+    client, seen = client_with(
+        page("det-1", next_cursor="c-2"), page("det-2", next_cursor="c-3", has_more=False)
+    )
     edr = EDR(CONFIG)
 
     first = edr.pull(client, None)
@@ -48,14 +55,17 @@ def test_second_call_sends_the_cursor_from_the_first_page():
     assert second.more is False
 
 
-@pytest.mark.parametrize("status, error, retried", [
-    (401, AuthError, False),
-    (403, AuthError, False),
-    (400, InvalidCursor, False),
-    (404, UnexpectedResponse, False),
-    (500, VendorError, True),
-    (503, VendorError, True),
-])
+@pytest.mark.parametrize(
+    "status, error, retried",
+    [
+        (401, AuthError, False),
+        (403, AuthError, False),
+        (400, InvalidCursor, False),
+        (404, UnexpectedResponse, False),
+        (500, VendorError, True),
+        (503, VendorError, True),
+    ],
+)
 def test_status_maps_to_the_right_error(status, error, retried):
     client, _ = client_with(httpx.Response(status, json={"detail": "nope"}))
 

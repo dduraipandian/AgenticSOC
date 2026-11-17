@@ -33,6 +33,7 @@ def make_edr_alert(raw, **overrides) -> Alert:
 
 # --- valid alerts -------------------------------------------------------------------------------
 
+
 def test_builds_alert_from_s6_detection(s6_detection):
     alert = make_edr_alert(s6_detection)
 
@@ -119,6 +120,7 @@ def test_rejects_invalid_ip_and_port():
 
 
 # --- behaviour ----------------------------------------------------------------------------------
+
 
 def test_alert_cannot_be_changed_after_creation(s6_detection):
     alert = make_edr_alert(s6_detection)

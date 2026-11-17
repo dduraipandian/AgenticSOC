@@ -27,16 +27,12 @@ class Gemini(Provider):
         return self._client
 
     def get_tool_definition(self, tool: Tool) -> dict:
-        return {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters_json_schema": tool.parameters
-            }
+        return {"name": tool.name, "description": tool.description, "parameters_json_schema": tool.parameters}
 
     def generate(self, history: list, tools: list[types.Tool]):
-        return self.client.models.generate_content(model=self.model,
-                                                    contents=history,
-                                                    config=self.get_config(tools))
+        return self.client.models.generate_content(
+            model=self.model, contents=history, config=self.get_config(tools)
+        )
 
     def get_response_text(self, response: types.GenerateContentResponse) -> str | None:
         return response.text
@@ -49,7 +45,7 @@ class Gemini(Provider):
 
         history.append(content)
 
-    def append_response_to_history(self, history: list,  role: str, response: types.GenerateContentResponse):
+    def append_response_to_history(self, history: list, role: str, response: types.GenerateContentResponse):
         history.append(response.candidates[0].content)
 
     def get_function_calls(self, response: types.GenerateContentResponse) -> list:
@@ -62,10 +58,7 @@ class Gemini(Provider):
         return [f.name for f in function_calls]
 
     def get_function_response(self, function_call, response):
-        return types.Part.from_function_response(
-                    name=function_call.name,
-                    response=response
-                )
+        return types.Part.from_function_response(name=function_call.name, response=response)
 
     def get_response_metadata(self, response: types.GenerateContentResponse) -> TokenUsage:
         if not response.usage_metadata:
@@ -76,7 +69,7 @@ class Gemini(Provider):
             "prompt_token_count": usage_metadata.prompt_token_count or 0,
             "output_token_count": usage_metadata.candidates_token_count or 0,
             "thoughts_token_count": usage_metadata.thoughts_token_count or 0,
-            "total_token_count": usage_metadata.total_token_count or 0
+            "total_token_count": usage_metadata.total_token_count or 0,
         }
         return TokenUsage(**usage)
 

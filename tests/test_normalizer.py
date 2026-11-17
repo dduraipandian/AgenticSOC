@@ -128,6 +128,7 @@ def run(rows, checkpoints=None, store=None):
 
 # --- critical ---------------------------------------------------------------------------------
 
+
 def test_bad_event_is_quarantined_and_the_checkpoint_moves_past_it(make_row):
     rows = [make_row(1, "det-1"), make_row(2, "det-2", severity=150), make_row(3, "det-3")]
 
@@ -149,14 +150,17 @@ def test_missing_field_is_a_failure_not_a_crash(make_row):
     assert checkpoints.rows[SOURCE] == 1
 
 
-@pytest.mark.parametrize("change", [
-    {"ts_ms": "1731400000000"},
-    {"ts_ms": 10**20},
-    {"net": "203.0.113.50"},
-    {"file": "/etc/shadow"},
-    {"process": ["x"]},
-    {"process": {"cmdline": "awk", "user": "svc-maint", "pid": 7, "lineage": ["bash"]}},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"ts_ms": "1731400000000"},
+        {"ts_ms": 10**20},
+        {"net": "203.0.113.50"},
+        {"file": "/etc/shadow"},
+        {"process": ["x"]},
+        {"process": {"cmdline": "awk", "user": "svc-maint", "pid": 7, "lineage": ["bash"]}},
+    ],
+)
 def test_malformed_row_is_quarantined_and_the_next_row_still_lands(make_row, change):
     rows = [make_row(1, "det-1", **change), make_row(2, "det-2")]
 
@@ -191,8 +195,11 @@ def test_alert_id_is_the_raw_event_id(make_row):
 
 def test_alert_row_sends_sections_as_json(s6_detection):
     # The REAL AlertStore with a recording connection: IPv4Address must not reach json.dumps.
-    alert = EDR(uuid7(), s6_detection).alert().model_copy(
-        update={"network": Network(dst_ip="203.0.113.50", dst_port=8443)})
+    alert = (
+        EDR(uuid7(), s6_detection)
+        .alert()
+        .model_copy(update={"network": Network(dst_ip="203.0.113.50", dst_port=8443)})
+    )
     conn = RecordingConn()
 
     AlertStore().save_many(conn, [alert])

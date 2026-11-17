@@ -30,8 +30,9 @@ def entity_key(alert: AlertRow) -> str | None:
     return None
 
 
-def group_alerts(alerts: list[AlertRow], max_age: timedelta,
-                 max_alerts: int) -> list[tuple[str | None, list[AlertRow]]]:
+def group_alerts(
+    alerts: list[AlertRow], max_age: timedelta, max_alerts: int
+) -> list[tuple[str | None, list[AlertRow]]]:
     # one group per entity, in time order. A group is bounded like a case: it is split when an alert is more
     # than max_age after the group's first alert, or when it has max_alerts alerts.
     # an alert with no host and no user can't be grouped: it is a group of its own.
@@ -56,12 +57,22 @@ def group_alerts(alerts: list[AlertRow], max_age: timedelta,
     return groups
 
 
-def add_to_case(conn, case_store: CaseStore, key: str | None, alerts: list[AlertRow],
-                max_age: timedelta, max_alerts: int, related_age: timedelta) -> None:
+def add_to_case(
+    conn,
+    case_store: CaseStore,
+    key: str | None,
+    alerts: list[AlertRow],
+    max_age: timedelta,
+    max_alerts: int,
+    related_age: timedelta,
+) -> None:
     # every group asks the DB, not only the first of an entity: a case can have alerts later than this batch
     related_case_id = None
-    case = case_store.find_open(conn, key, alerts[0].alert_time, alerts[-1].alert_time,
-                                max_age, max_alerts) if key else None
+    case = (
+        case_store.find_open(conn, key, alerts[0].alert_time, alerts[-1].alert_time, max_age, max_alerts)
+        if key
+        else None
+    )
     if case:
         # the case takes what it has room for. The rest go to a new case, related to this one
         case_id, alert_count = case
@@ -79,11 +90,9 @@ def add_to_case(conn, case_store: CaseStore, key: str | None, alerts: list[Alert
     case_store.add_alerts(conn, case_id, alerts)
 
 
-def read_alerts(source: str,
-                pool: ConnectionPool,
-                checkpoint_store: CaseCheckpointStore,
-                reader: AlertReader,
-                case_config) -> Generator[tuple[list[AlertRow], int]]:
+def read_alerts(
+    source: str, pool: ConnectionPool, checkpoint_store: CaseCheckpointStore, reader: AlertReader, case_config
+) -> Generator[tuple[list[AlertRow], int]]:
 
     with pool.connection() as conn:
         checkpoint = checkpoint_store.load(conn, source)
@@ -100,8 +109,14 @@ def read_alerts(source: str,
         yield alerts, checkpoint
 
 
-def build_cases(source: str, pool: ConnectionPool, checkpoint_store: CaseCheckpointStore, case_store: CaseStore,
-                alert_gen, case_config):
+def build_cases(
+    source: str,
+    pool: ConnectionPool,
+    checkpoint_store: CaseCheckpointStore,
+    case_store: CaseStore,
+    alert_gen,
+    case_config,
+):
     # IMPORTANT: bounded cases. An unbounded case is too much for one investigation;
     # a case that is full or too old gets a new case, linked to it through related_case_ids.
     max_age = timedelta(minutes=case_config.get("max_age", MAX_AGE))

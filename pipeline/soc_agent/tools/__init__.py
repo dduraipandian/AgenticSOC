@@ -1,5 +1,3 @@
-from pipeline.soc_agent.tools.default import PRETTY_JSON
+from pipeline.soc_agent.tools.default import SUBMIT_INVESTIGATION
 
-TOOL_LIST = [
-    PRETTY_JSON
-]
+TOOL_LIST = [SUBMIT_INVESTIGATION]

@@ -1,4 +1,3 @@
-
 import logging
 from collections.abc import Generator
 from time import sleep
@@ -20,15 +19,20 @@ log = logging.getLogger("puller")
 
 
 class PullerAttemptsExhausted(Exception): ...
+
+
 class PullerUnrecoverableError(Exception): ...
 
-def pull_data(adapter_name: str,
-                pool: ConnectionPool,
-                adapter_instance: PullerAdapter,
-                store: CheckpointStore,
-                client: httpx.Client) -> Generator[tuple[list[RawEvent], dict]]:
+
+def pull_data(
+    adapter_name: str,
+    pool: ConnectionPool,
+    adapter_instance: PullerAdapter,
+    store: CheckpointStore,
+    client: httpx.Client,
+) -> Generator[tuple[list[RawEvent], dict]]:
     retry = 0
-    data:  list[RawEvent] = []
+    data: list[RawEvent] = []
     backoff = delays()
     error = None
 
@@ -52,18 +56,28 @@ def pull_data(adapter_name: str,
             log.warning("retriable error: %s", exc)
             sleep(next(backoff))
             error = exc
-        except Exception as exc: # noqa:BLE001
+        except Exception as exc:  # noqa:BLE001
             # IMPORTANT: this should create SEV 1 alert
-            raise PullerUnrecoverableError(f"unrecoverable error occured to fetch {adapter_name} {client.base_url} {exc}")
+            raise PullerUnrecoverableError(
+                f"unrecoverable error occured to fetch {adapter_name} {client.base_url} {exc}"
+            )
 
         if retry > adapter_instance.retry_max_attempts:
             # IMPORTANT: this should create SEV 1 alert
-            raise PullerAttemptsExhausted(f"too many failures to fetch {adapter_name} {client.base_url} {error}")
+            raise PullerAttemptsExhausted(
+                f"too many failures to fetch {adapter_name} {client.base_url} {error}"
+            )
 
         retry += 1
 
 
-def save_events(adapter_name: str, pool: ConnectionPool, checkpoint_store: CheckpointStore, puller_store: PullerEventStore, event_gen):
+def save_events(
+    adapter_name: str,
+    pool: ConnectionPool,
+    checkpoint_store: CheckpointStore,
+    puller_store: PullerEventStore,
+    event_gen,
+):
     for events, checkpoint in event_gen:
         if len(events) > 0:
             with pool.connection() as conn, conn.transaction():
