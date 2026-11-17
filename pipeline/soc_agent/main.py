@@ -1,7 +1,8 @@
 from config import config
 from pipeline.soc_agent.agent import Agent
 from pipeline.soc_agent.providers.gemini import Gemini
-from pipeline.soc_agent.tools.tools import ToolFunction
+from pipeline.soc_agent.tools import TOOL_LIST
+from pipeline.soc_agent.tools.tools import tool_map
 
 GEMINI_MODEL= "models/gemini-3.5-flash-lite"
 
@@ -20,7 +21,7 @@ def main():
     system_prompt = ""
     question="hello"
 
-    tools = ToolFunction.get_tools()
+    tools = tool_map(TOOL_LIST)
     gemini_model = gemini_config.pop("model", GEMINI_MODEL)
     provider = Gemini(gemini_model, system_prompt, "HIGH", **gemini_config)
     run_agent(question, tools, provider, **agent_config)

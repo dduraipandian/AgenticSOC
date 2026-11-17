@@ -1,44 +1,23 @@
+from typing import Literal
+
+from pydantic import Field
+
+from pipeline.soc_agent.tools.tools import ToolArgs, make_tool, validate_signature
+
+Verdict = Literal["malicious", "benign", "inconclusive"]
 
 
-from pipeline.soc_agent.tools.tools import InputSchema, ToolFunction
-
-parameters=InputSchema(
-    type = "object",
-    properties = {
-        "evidence": {"type": "object"},
-        "verdict": {"type": "string"}
-    },
-    required = ["evidence", "verdict"]
-)
+class PrettyJsonArgs(ToolArgs):
+    evidence: dict = Field(description="Facts that support the verdict, e.g. {'parent_process': 'cron', 'user': 'svc-maint'}")
+    verdict: Verdict = Field(description="Your conclusion about the case. Use inconclusive if the evidence is not enough.")
 
 
-@ToolFunction()(parameters=parameters)
-def pretty_json(evidence: dict, verdict: str) -> dict:
-    """pretty prints input into python json dict"""
+@validate_signature(PrettyJsonArgs)
+def pretty_json(evidence: dict, verdict: Verdict) -> dict:
+    """Format investigation evidence and verdict as a JSON object."""
     return {
         "evidence": evidence,
         "verdict": verdict
     }
 
-
-# class PrettyJson(ToolFunction):
-#     @classmethod
-#     def get_tool_definition(cls) -> Tool:
-#         func = pretty_json
-#         name=func.__name__
-
-#         if not func.__doc__:
-#             raise ToolDescriptionNotFound(f"function description not found for {name} in tool {cls.__name__}")
-
-#         return Tool(name=name,
-#                     description=func.__doc__,
-#                     parameters=InputSchema(
-#                         type = "object",
-#                         properties = {
-#                             "evidence": {"type": "object"},
-#                             "verdict": {"type": "string"}
-#                         },
-#                         required = ["evidence", "verdict"]
-#                     ),
-#                     function=func
-#                 )
+PRETTY_JSON = make_tool(pretty_json, PrettyJsonArgs)

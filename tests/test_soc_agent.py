@@ -1,12 +1,16 @@
 import pytest
 from google.genai import types
+from pydantic import Field
 
 from pipeline.soc_agent.agent import Agent
 from pipeline.soc_agent.providers.gemini import Gemini
-from pipeline.soc_agent.tools.tools import InputSchema, Tool
+from pipeline.soc_agent.tools.tools import Tool, ToolArgs
 
 HOST = {"host": "build-01", "role": "ci-build-server"}
-HOST_SCHEMA = InputSchema(properties={"host": {"type": "string"}}, required=["host"])
+
+
+class HostArgs(ToolArgs):
+    host: str = Field(description="hostname, e.g. build-01")
 
 
 class FakeModels:
@@ -46,11 +50,12 @@ def with_usage(response: types.GenerateContentResponse, prompt: int, output: int
     return response
 
 
-def make_agent(responses, get_host=lambda host: HOST, max_iteration: int = 3) -> tuple[Agent, FakeModels]:
+def make_agent(responses, get_host=lambda host: HOST, max_iteration: int = 3,
+               **agent_options) -> tuple[Agent, FakeModels]:
     provider = Gemini("models/test", "you are a SOC investigator", "HIGH", max_iteration=max_iteration)
     provider._client = FakeClient(responses)
-    tools = {"get_host": Tool("get_host", "Look up an endpoint by hostname.", HOST_SCHEMA, get_host)}
-    return Agent(tools, provider), provider._client.models
+    tools = {"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)}
+    return Agent(tools, provider, **agent_options), provider._client.models
 
 
 def function_responses(content: types.Content) -> list[tuple[str, dict]]:
@@ -186,3 +191,47 @@ def test_a_blocked_cut_off_or_empty_answer_fails_the_investigation(response):
     *_, end = result.execution_tracing
     assert (end["type"], end["status"]) == ("result", "failed")
 
+
+
+@pytest.mark.parametrize("args, problem", [
+    ({"host": 42}, "host: Input should be a valid string"),
+    ({}, "host: Field required"),
+    ({"host": "build-01", "path": "/etc/shadow"}, "path: Extra inputs are not permitted"),
+], ids=["wrong type", "missing", "extra field"])
+def test_arguments_that_break_the_schema_never_reach_the_tool(args, problem):
+    looked_up = []
+    agent, models = make_agent([calls(("get_host", args)), answer("let me fix that")],
+                               get_host=lambda host: looked_up.append(host) or HOST)
+
+    agent.execute("What kind of machine is build-01?")
+
+    assert looked_up == []
+    contents, _ = models.requests[1]
+    [(_, response)] = function_responses(contents[2])
+    assert problem in response["untrusted_data"]["error"]  # specific enough for the model to correct itself
+
+
+def test_tool_calls_beyond_the_cap_in_one_turn_are_refused():
+    looked_up = []
+    agent, models = make_agent([calls(*[("get_host", {"host": f"host-{i}"}) for i in range(3)]), answer("done")],
+                               get_host=lambda host: looked_up.append(host) or HOST, max_tool_calls_per_turn=2)
+
+    agent.execute("Look up three hosts")
+
+    assert looked_up == ["host-0", "host-1"]
+    contents, _ = models.requests[1]
+    *_, (_, refused) = function_responses(contents[2])  # every call still gets a response
+    assert "refused" in refused["untrusted_data"]["error"]
+
+
+def test_the_investigation_stops_when_its_time_budget_is_spent():
+    clock = iter([0, 1, 301])  # started, before step 0, before step 1
+    agent, models = make_agent([calls(("get_host", {"host": "build-01"})), answer("never asked")],
+                               clock=lambda: next(clock), max_seconds=300)
+
+    result = agent.execute("What kind of machine is build-01?")
+
+    assert result.status == "failed"
+    assert "300s" in result.response  # says which limit ended it, without pinning the wording
+    assert len(models.requests) == 1
+    assert result.execution_tracing[-1]["type"] == "result"

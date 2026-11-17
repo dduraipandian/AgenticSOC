@@ -1,69 +1,96 @@
-from abc import abstractmethod
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import wraps
-from typing import ClassVar
+from typing import Any, get_type_hints
+
+from beartype.door import is_subhint
+from pydantic import BaseModel, ConfigDict
 
 
 class DuplicateToolError(Exception): ...
 class ToolDescriptionNotFound(Exception): ...
+class ToolDefinitionError(Exception): ...
 
 
-@dataclass(frozen=True)
-class InputSchema:
-    properties: dict
-    required: list[str]
-    type: str = "object"
-    additionalProperties: bool = False
+class ToolArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        if cls is ToolArgs:
+            return
+
+        missing = [
+            name
+            for name, field_info in cls.model_fields.items()
+            if not field_info.description or not field_info.description.strip()
+        ]
+        if missing:
+            raise ToolDescriptionNotFound(
+                f"Model '{cls.__name__}' is missing field descriptions for: {', '.join(missing)}"
+            )
 
 
 @dataclass(frozen=True)
 class Tool:
     name: str
     description: str
-    parameters: InputSchema
-    function: Callable
+    args_model: type[ToolArgs]
+    function: Callable[..., dict]
+
+    @property
+    def parameters(self) -> dict:
+        return self.args_model.model_json_schema()
 
 
-class ToolFunction:
-    tools: ClassVar[dict[str, Tool]] = {}
+def validate_signature(args_model: type[ToolArgs], strict: bool = True):
+    def wrap(func):
+        func_hints = get_type_hints(func)
+        model_hints = get_type_hints(args_model)
 
-    def __init_subclass__(cls) -> None:
-        tool_definition = cls.get_tool_definition()
-        name = tool_definition.name
-        if name in cls.tools:
-            raise DuplicateToolError(f"{name} is already registered in tools")
+        signature = inspect.signature(func)
+        func_params = set(signature.parameters)
+        model_fields = set(args_model.model_fields)
 
-        cls.tools[name] = tool_definition
+        if func_params != model_fields:
+            raise ToolDefinitionError(
+                f"{func.__name__}: parameter mismatch. "
+                f"Missing: {model_fields - func_params}, "
+                f"Extra: {func_params - model_fields}"
+            )
 
-    @classmethod
-    def get_tools(cls) -> dict[str, Tool]:
-        return cls.tools
+        for name in model_fields:
+            actual = func_hints.get(name)
+            expected = model_hints[name]
 
-    @classmethod
-    @abstractmethod
-    def get_tool_definition(cls) -> Tool:
-        raise NotImplementedError()
+            if (strict and actual != expected) or (actual is None or not is_subhint(expected, actual)):
+                raise ToolDefinitionError(
+                    f"{func.__name__}.{name}: "
+                    f"expected {expected}, got {actual}"
+                )
 
+        return func
 
-    def __call__(self, parameters: InputSchema, description: str | None  = None):
-        def wrap(func):
-            name = func.__name__
-            func_description = description or func.__doc__
+    return wrap
 
-            if not func_description:
-                raise ToolDescriptionNotFound(f"function description not found for {name}")
+def make_tool(func: Callable[..., dict], args_model: type[ToolArgs], description: str | None = None):
+    description = description or func.__doc__
+    if not description:
+        raise ToolDescriptionNotFound(f"{func.__name__}: is missing a description")
 
-            self.tools[name] = Tool(name=name,
-                                    description=func_description,
-                                    parameters=parameters,
-                                    function=func
-                                )
+    return Tool(
+        name=func.__name__,
+        description=description.strip(),
+        args_model=args_model,
+        function=func
+    )
 
-            @wraps(func)
-            def inner(*args, **kwargs):
-                return func(*args, **kwargs)
+def tool_map(tools: list[Tool]) -> dict[str, Tool]:
+    by_name = {}
+    for t in tools:
+        if t.name in by_name:
+            raise DuplicateToolError(f"{t.name} is already in the tool list")
+        by_name[t.name] = t
 
-            return inner
-
-        return wrap
+    return by_name

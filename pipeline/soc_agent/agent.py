@@ -1,7 +1,10 @@
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
+
+from pydantic import ValidationError
 
 from common.utils import Timer
 from pipeline.soc_agent.providers.providers import Provider
@@ -12,7 +15,10 @@ log = logging.getLogger("agent")
 INVESTIGATION_STATUS = Literal["executing", "success", "failed"]
 
 MAX_ITERATION = 5
+MAX_TOOL_CALLS_PER_TURN = 5
+MAX_SECONDS = 300
 
+# the model's own mistake (unknown tool, bad arguments, too many calls): its message goes back to the model
 class AgentRuntimeError(Exception): ...
 
 @dataclass(slots=True)
@@ -26,19 +32,28 @@ class AgentResponse:
 
 
 class Agent:
-    def __init__(self, tools: dict[str, Tool], provider: Provider, **kwargs):
+    def __init__(self, tools: dict[str, Tool], provider: Provider, clock: Callable[[], float] = time.monotonic,
+                 **kwargs):
         self.tools = tools
         self.provider = provider
+        self.clock = clock  # monotonic, so a wall-clock jump can't end or extend an investigation
         self.options = kwargs
         self.trace = self.options.get("trace", True)
+        self.max_tool_calls_per_turn = self.options.get("max_tool_calls_per_turn", MAX_TOOL_CALLS_PER_TURN)
+        self.max_seconds = self.options.get("max_seconds", MAX_SECONDS)
 
-    def execute_tool(self, name: str, args: dict) -> dict:
-        tool_config = self.tools.get(name)
-        func = tool_config.function if tool_config else None
-        if func and callable(func):
-            return func(**args)
+    def execute_tool(self, name: str, args: dict | None) -> dict:
+        tool = self.tools.get(name)
+        if not tool:
+            raise AgentRuntimeError(f"Unknown tool: {name}")
 
-        raise AgentRuntimeError(f"Unknown tool: {name}")
+        try:
+            valid_args = tool.args_model.model_validate(args or {})
+        except ValidationError as exc:
+            problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'arguments'}: {e['msg']}" for e in exc.errors())
+            raise AgentRuntimeError(f"invalid arguments: {problems}") from None
+
+        return tool.function(**valid_args.model_dump())
 
     def execute(self, question: str, role: str = "user") -> AgentResponse:
         history = []
@@ -51,7 +66,13 @@ class Agent:
         max_iteration = self.provider.provider_config.get("max_iteration")
         max_iteration = max_iteration or self.options.get("max_iteration", MAX_ITERATION)
 
+        started = self.clock()
         for step in range(max_iteration):
+            # tools bound their own calls with client timeouts; this bounds the whole investigation
+            if self.clock() - started > self.max_seconds:
+                return self.finish(agent_response, execution_tracing, "failed",
+                                   f"investigation exceeded {self.max_seconds}s time limit")
+
             try:
                 with Timer() as t:
                     response = self.provider.generate(history, tools)
@@ -97,15 +118,19 @@ class Agent:
             self.provider.append_response_to_history(history, "model", response)
 
             function_response_parts = []
-            for function_call in function_calls:
+            for index, function_call in enumerate(function_calls):
                 function_name, function_args = self.provider.get_function_details(function_call)
                 error = None
 
                 with Timer() as f:
                     try:
+                        # every call still gets a response, so the extra ones are answered with the refusal
+                        if index >= self.max_tool_calls_per_turn:
+                            raise AgentRuntimeError(f"refused: more than {self.max_tool_calls_per_turn} "
+                                                    "tool calls in one turn")
                         function_response = self.execute_tool(function_name, function_args)
                     except AgentRuntimeError as exc:
-                        log.warning("missing tool %s", function_name)
+                        log.warning("rejected tool call %s: %s", function_name, exc)
                         error = str(exc)
                         function_response = {"error": f"failed to execute tool {function_name} error: {exc}"}
                     except Exception as exc:

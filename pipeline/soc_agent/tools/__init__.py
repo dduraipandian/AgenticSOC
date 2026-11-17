@@ -1,3 +1,5 @@
-from pipeline.soc_agent.tools.default import pretty_json
+from pipeline.soc_agent.tools.default import PRETTY_JSON
 
-__all__ = ["pretty_json"]
+TOOL_LIST = [
+    PRETTY_JSON
+]
