@@ -127,10 +127,11 @@ def main():
     alert_store = AlertStore()
 
     for source, source_config in app_config.adapters.items():
-        if "normalizer" not in source_config:
+        actors = source_config.get("actors", {})
+        if "normalizer" not in actors:
             continue
 
-        normalizer_config: dict[str, Any] = source_config["normalizer"]
+        normalizer_config: dict[str, Any] = actors["normalizer"]
 
         if normalizer_config.get("enabled") == False:
             continue

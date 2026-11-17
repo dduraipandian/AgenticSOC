@@ -11,8 +11,9 @@ from common.backoff import delays
 from common.db import make_pool
 from config import config
 from pipeline.puller.adapters import ADAPTERS
-from pipeline.puller.adapters.adapters import Page, PullerAdapter, RateLimited, RawEvent, VendorError
+from pipeline.puller.adapters.adapters import Page, PullerAdapter, RawEvent
 from pipeline.puller.db import CheckpointStore, PullerEventStore
+from vendors.base import RateLimited, VendorError, make_client
 
 retriable_errors = (VendorError, httpx.HTTPError, httpx.TimeoutException, httpx.ConnectError)
 log = logging.getLogger("puller")
@@ -29,19 +30,19 @@ def pull_data(
     pool: ConnectionPool,
     adapter_instance: PullerAdapter,
     store: CheckpointStore,
-    client: httpx.Client,
 ) -> Generator[tuple[list[RawEvent], dict]]:
     retry = 0
     data: list[RawEvent] = []
     backoff = delays()
     error = None
+    base_url = adapter_instance.api.client.base_url
 
     with pool.connection() as conn:
         checkpoint = store.load(conn, adapter_name) or adapter_instance.initial_checkpoint()
 
     while True:
         try:
-            page: Page = adapter_instance.pull(client, checkpoint)
+            page: Page = adapter_instance.pull(checkpoint)
             backoff = delays()
             retry = 0
             checkpoint = page.next
@@ -59,14 +60,12 @@ def pull_data(
         except Exception as exc:  # noqa:BLE001
             # IMPORTANT: this should create SEV 1 alert
             raise PullerUnrecoverableError(
-                f"unrecoverable error occured to fetch {adapter_name} {client.base_url} {exc}"
+                f"unrecoverable error occured to fetch {adapter_name} {base_url} {exc}"
             )
 
         if retry > adapter_instance.retry_max_attempts:
             # IMPORTANT: this should create SEV 1 alert
-            raise PullerAttemptsExhausted(
-                f"too many failures to fetch {adapter_name} {client.base_url} {error}"
-            )
+            raise PullerAttemptsExhausted(f"too many failures to fetch {adapter_name} {base_url} {error}")
 
         retry += 1
 
@@ -106,10 +105,11 @@ def main():
     puller_store = PullerEventStore()
 
     for adapter_name, adapter_config in app_config.adapters.items():
-        if "puller" not in adapter_config:
+        actors = adapter_config.get("actors", {})
+        if "puller" not in actors:
             continue
 
-        puller_config: dict[str, Any] = adapter_config["puller"]
+        puller_config: dict[str, Any] = actors["puller"]
 
         if puller_config.get("enabled") == False:
             continue
@@ -118,10 +118,15 @@ def main():
             continue
 
         adapter_cls = ADAPTERS[adapter_name]
-        adapter_instance = adapter_cls(puller_config)
 
-        client = adapter_instance.create_client()
-        events_gen = pull_data(adapter_name, puller_pool, adapter_instance, checkpoint_store, client)
+        # use actor's own key
+        client = make_client(
+            adapter_config["url"], puller_config["api-key"], puller_config.get("timeout", 10)
+        )
+        api = adapter_cls.api_class(client, adapter_config)
+        adapter_instance = adapter_cls(api, puller_config)
+
+        events_gen = pull_data(adapter_name, puller_pool, adapter_instance, checkpoint_store)
         save_events(adapter_name, puller_pool, checkpoint_store, puller_store, events_gen)
 
 

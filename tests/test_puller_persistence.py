@@ -6,13 +6,16 @@ import httpx
 import psycopg
 import pytest
 
-from pipeline.puller.adapters.adapters import AuthError, RawEvent
+from pipeline.puller.adapters.adapters import RawEvent
 from pipeline.puller.adapters.edr import EDR
 from pipeline.puller.db import PullerEventStore
 from pipeline.puller.main import PullerUnrecoverableError, pull_data, save_events
+from vendors.base import AuthError
+from vendors.sentrix_edr import SentrixEDR
 
 SOURCE = "sentrix-edr"
-CONFIG = {"url": "http://edr.test", "path": "/v2/detections", "api-key": "k", "limit": 2}
+VENDOR_CONFIG = {"url": "http://edr.test", "api": {"detections": {"path": "/v2/detections"}}}
+PULLER_CONFIG = {"limit": 2}
 
 
 class FakeConn:
@@ -162,8 +165,10 @@ def test_auth_error_stops_the_puller():
         seen.append(request)
         return httpx.Response(401, json={"detail": "invalid api key"})
 
-    client = httpx.Client(base_url=CONFIG["url"], transport=httpx.MockTransport(vendor))
-    loop = pull_data(SOURCE, FakePool(), EDR(CONFIG), FakeCheckpointStore(), client)
+    client = httpx.Client(base_url=VENDOR_CONFIG["url"], transport=httpx.MockTransport(vendor))
+    loop = pull_data(
+        SOURCE, FakePool(), EDR(SentrixEDR(client, VENDOR_CONFIG), PULLER_CONFIG), FakeCheckpointStore()
+    )
 
     with pytest.raises(PullerUnrecoverableError) as exc:
         next(loop)

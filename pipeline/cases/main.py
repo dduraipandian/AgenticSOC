@@ -142,10 +142,11 @@ def main():
     case_store = CaseStore()
 
     for source, source_config in app_config.adapters.items():
-        if "cases" not in source_config:
+        actors = source_config.get("actors", {})
+        if "cases" not in actors:
             continue
 
-        case_config: dict[str, Any] = source_config["cases"]
+        case_config: dict[str, Any] = actors["cases"]
 
         if case_config.get("enabled") == False:
             continue
