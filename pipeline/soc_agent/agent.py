@@ -58,11 +58,23 @@ class Agent:
             except Exception as exc:
                 log.exception("failed to call generate content step %s", step)
                 self.add_event(execution_tracing, step=step, type="model", duration_ms=t.elapsed_ms, error=str(exc))
-                return self.finish(agent_response, execution_tracing, "failed",
-                                   f"failed to call generate content step {step} error {exc!r}")
+                return self.finish(agent_response, execution_tracing, "failed", f"failed to call generate content step {step} error {exc!r}")
 
             usage_metadata = self.provider.get_response_metadata(response)
             function_calls = self.provider.get_function_calls(response)
+
+            agent_response.prompt_token_count += usage_metadata.prompt_token_count
+            # https://aistudio.google.com/docs/thinking#pricing
+            agent_response.output_token_count += usage_metadata.thoughts_token_count + usage_metadata.output_token_count
+
+            healthy, reason = self.provider.is_response_healthy(response)
+            if not healthy:
+                self.add_event(execution_tracing, step=step, type="model", duration_ms=t.elapsed_ms,
+                                prompt_tokens=usage_metadata.prompt_token_count,
+                                output_tokens=usage_metadata.output_token_count,
+                                thoughts_tokens=usage_metadata.thoughts_token_count,
+                                error=reason)
+                return self.finish(agent_response, execution_tracing, "failed", reason)
 
             self.add_event(execution_tracing,
                            step=step,
@@ -75,13 +87,12 @@ class Agent:
                            error=None)
             log.info("step %s: model call %.0f ms, %s tool calls", step, t.elapsed_ms, len(function_calls))
 
-            agent_response.prompt_token_count += usage_metadata.prompt_token_count
-            # https://aistudio.google.com/docs/thinking#pricing
-            agent_response.output_token_count += usage_metadata.thoughts_token_count + usage_metadata.output_token_count
-
             if not function_calls:
-                return self.finish(agent_response, execution_tracing, "success",
-                                   self.provider.get_response_text(response))
+                text = self.provider.get_response_text(response)
+                if not text:
+                    return self.finish(agent_response, execution_tracing, "failed", "empty response")
+
+                return self.finish(agent_response, execution_tracing, "success", text)
 
             self.provider.append_response_to_history(history, "model", response)
 

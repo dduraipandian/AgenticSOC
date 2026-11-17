@@ -72,3 +72,7 @@ class Provider:
     @abstractmethod
     def get_response_metadata(self, response: Any) -> TokenUsage:
         raise NotImplementedError()
+
+    @abstractmethod
+    def is_response_healthy(self, response: Any) -> tuple[bool, str | None]:
+        raise NotImplementedError()

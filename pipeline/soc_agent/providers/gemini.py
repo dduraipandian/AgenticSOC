@@ -79,3 +79,15 @@ class Gemini(Provider):
             "total_token_count": usage_metadata.total_token_count or 0
         }
         return TokenUsage(**usage)
+
+    def is_response_healthy(self, response: types.GenerateContentResponse) -> tuple[bool, str | None]:
+        if response.prompt_feedback and response.prompt_feedback.block_reason:
+            return False, f"prompt blocked: {response.prompt_feedback.block_reason}"
+        if not response.candidates:
+            return False, "no candidates in response"
+
+        finish_reason = response.candidates[0].finish_reason
+        if finish_reason not in (None, types.FinishReason.STOP):
+            return False, f"model stopped: {finish_reason}"
+
+        return True, None

@@ -164,3 +164,25 @@ def test_a_failed_model_call_ends_the_investigation_as_failed():
     *_, failed_call, end = result.execution_tracing
     assert failed_call["error"] == "429 RESOURCE_EXHAUSTED"  # the failed call is in the trace
     assert (end["type"], end["status"]) == ("result", "failed")
+
+
+def model_turn(finish_reason: str, *parts: types.Part) -> types.GenerateContentResponse:
+    return types.GenerateContentResponse(
+        candidates=[types.Candidate(finish_reason=finish_reason, content=types.Content(role="model", parts=list(parts)))])
+
+
+@pytest.mark.parametrize("response", [
+    types.GenerateContentResponse(prompt_feedback=types.GenerateContentResponsePromptFeedback(block_reason="SAFETY")),
+    model_turn("SAFETY"),
+    model_turn("MAX_TOKENS", types.Part(text="build-01 is")),  # a half verdict must not pass as an answer
+    model_turn("STOP"),
+], ids=["prompt blocked", "answer blocked", "cut off", "empty answer"])
+def test_a_blocked_cut_off_or_empty_answer_fails_the_investigation(response):
+    agent, _ = make_agent([response])
+
+    result = agent.execute("What kind of machine is build-01?")
+
+    assert result.status == "failed"
+    *_, end = result.execution_tracing
+    assert (end["type"], end["status"]) == ("result", "failed")
+
