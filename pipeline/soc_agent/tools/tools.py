@@ -1,9 +1,7 @@
-import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, get_type_hints
+from typing import Any
 
-from beartype.door import is_subhint
 from pydantic import BaseModel, ConfigDict
 
 
@@ -41,42 +39,16 @@ class Tool:
     name: str
     description: str
     args_model: type[ToolArgs]
-    function: Callable[..., dict]
+    function: Callable[[ToolArgs], dict]
 
     @property
     def parameters(self) -> dict:
         return self.args_model.model_json_schema()
 
 
-def validate_signature(args_model: type[ToolArgs], strict: bool = True):
-    def wrap(func):
-        func_hints = get_type_hints(func)
-        model_hints = get_type_hints(args_model)
-
-        signature = inspect.signature(func)
-        func_params = set(signature.parameters)
-        model_fields = set(args_model.model_fields)
-
-        if func_params != model_fields:
-            raise ToolDefinitionError(
-                f"{func.__name__}: parameter mismatch. "
-                f"Missing: {model_fields - func_params}, "
-                f"Extra: {func_params - model_fields}"
-            )
-
-        for name in model_fields:
-            actual = func_hints.get(name)
-            expected = model_hints[name]
-
-            if (strict and actual != expected) or (actual is None or not is_subhint(expected, actual)):
-                raise ToolDefinitionError(f"{func.__name__}.{name}: expected {expected}, got {actual}")
-
-        return func
-
-    return wrap
-
-
-def make_tool(func: Callable[..., dict], args_model: type[ToolArgs], description: str | None = None):
+def make_tool(
+    func: Callable[[ToolArgs], dict], args_model: type[ToolArgs], description: str | None = None
+) -> Tool:
     description = description or func.__doc__
     if not description:
         raise ToolDescriptionNotFound(f"{func.__name__}: is missing a description")

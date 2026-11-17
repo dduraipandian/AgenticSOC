@@ -15,12 +15,16 @@ log = logging.getLogger("agent")
 INVESTIGATION_STATUS = Literal["executing", "success", "failed"]
 
 MAX_ITERATION = 5
+FORCE_TOOLCALL = False
 MAX_TOOL_CALLS_PER_TURN = 5
 MAX_SECONDS = 300
 
 
 # the model's own mistake (unknown tool, bad arguments, too many calls): its message goes back to the model
 class AgentRuntimeError(Exception): ...
+
+
+class ProcessDeadlineError(Exception): ...
 
 
 @dataclass(slots=True)
@@ -31,6 +35,8 @@ class AgentResponse:
     status: INVESTIGATION_STATUS = "executing"
     prompt_token_count: int = 0
     output_token_count: int = 0
+    started_at: float = 0  # wall clock, epoch ms: when the investigation ran
+    duration_ms: float = 0  # from the monotonic clock: how long it took
 
 
 class Agent:
@@ -38,6 +44,7 @@ class Agent:
         self,
         tools: dict[str, Tool],
         provider: Provider,
+        task_config: dict | None = None,
         clock: Callable[[], float] = time.monotonic,
         **kwargs,
     ):
@@ -45,6 +52,7 @@ class Agent:
         self.provider = provider
         self.clock = clock  # monotonic, so a wall-clock jump can't end or extend an investigation
         self.options = kwargs
+        self.task_config = task_config or {}
         self.trace = self.options.get("trace", True)
         self.max_tool_calls_per_turn = self.options.get("max_tool_calls_per_turn", MAX_TOOL_CALLS_PER_TURN)
         self.max_seconds = self.options.get("max_seconds", MAX_SECONDS)
@@ -62,7 +70,7 @@ class Agent:
             )
             raise AgentRuntimeError(f"invalid arguments: {problems}") from None
 
-        return tool.function(**valid_args.model_dump())
+        return tool.function(valid_args)
 
     def execute(self, question: str, role: str = "user") -> AgentResponse:
         history = []
@@ -72,23 +80,27 @@ class Agent:
         tools = self.provider.get_tools(list(self.tools.values()))
         self.provider.append_history(history, role, question)
 
-        max_iteration = self.provider.provider_config.get("max_iteration")
-        max_iteration = max_iteration or self.options.get("max_iteration", MAX_ITERATION)
+        max_iteration = self.options.get("max_iteration", MAX_ITERATION)
+        force_toolcall = self.options.get("force_toolcall", FORCE_TOOLCALL)
+        finish_tool = self.task_config.get("finish_tool")
 
-        started = self.clock()
+        started = (
+            self.clock()
+        )  # monotonic: for the deadline and the duration, meaningless outside this process
+        agent_response.started_at = time.time() * 1000
         for step in range(max_iteration):
-            # tools bound their own calls with client timeouts; this bounds the whole investigation
-            if self.clock() - started > self.max_seconds:
+            try:
+                self.check_deadline(started)
+                with Timer() as t:
+                    response = self.provider.generate(history, tools, force_toolcall=force_toolcall)
+            except ProcessDeadlineError:
                 return self.finish(
                     agent_response,
                     execution_tracing,
+                    started,
                     "failed",
                     f"investigation exceeded {self.max_seconds}s time limit",
                 )
-
-            try:
-                with Timer() as t:
-                    response = self.provider.generate(history, tools)
             except Exception as exc:
                 log.exception("failed to call generate content step %s", step)
                 self.add_event(
@@ -97,6 +109,7 @@ class Agent:
                 return self.finish(
                     agent_response,
                     execution_tracing,
+                    started,
                     "failed",
                     f"failed to call generate content step {step} error {exc!r}",
                 )
@@ -122,7 +135,7 @@ class Agent:
                     thoughts_tokens=usage_metadata.thoughts_token_count,
                     error=reason,
                 )
-                return self.finish(agent_response, execution_tracing, "failed", reason)
+                return self.finish(agent_response, execution_tracing, started, "failed", reason)
 
             self.add_event(
                 execution_tracing,
@@ -140,9 +153,9 @@ class Agent:
             if not function_calls:
                 text = self.provider.get_response_text(response)
                 if not text:
-                    return self.finish(agent_response, execution_tracing, "failed", "empty response")
+                    return self.finish(agent_response, execution_tracing, started, "failed", "empty response")
 
-                return self.finish(agent_response, execution_tracing, "success", text)
+                return self.finish(agent_response, execution_tracing, started, "success", text)
 
             self.provider.append_response_to_history(history, "model", response)
 
@@ -151,24 +164,37 @@ class Agent:
                 function_name, function_args = self.provider.get_function_details(function_call)
                 error = None
 
-                with Timer() as f:
-                    try:
+                try:
+                    self.check_deadline(started)
+                    with Timer() as f:
                         # every call still gets a response, so the extra ones are answered with the refusal
                         if index >= self.max_tool_calls_per_turn:
                             raise AgentRuntimeError(
                                 f"refused: more than {self.max_tool_calls_per_turn} tool calls in one turn"
                             )
+                        if function_name == finish_tool and len(function_calls) > 1:
+                            raise AgentRuntimeError(
+                                f"{finish_tool} must be called on its own. Read the results of your other tool "
+                                f"calls first, then call {finish_tool} again by itself."
+                            )
+
                         function_response = self.execute_tool(function_name, function_args)
-                    except AgentRuntimeError as exc:
-                        log.warning("rejected tool call %s: %s", function_name, exc)
-                        error = str(exc)
-                        function_response = {"error": f"failed to execute tool {function_name} error: {exc}"}
-                    except Exception as exc:
-                        log.exception("failed to execute tool %s", function_name)
-                        error = str(
-                            exc
-                        )  # the real cause, for the trace; the model only gets the generic message
-                        function_response = {"error": f"failed to execute tool {function_name}"}
+                except AgentRuntimeError as exc:
+                    log.warning("rejected tool call %s: %s", function_name, exc)
+                    error = str(exc)
+                    function_response = {"error": f"failed to execute tool {function_name} error: {exc}"}
+                except ProcessDeadlineError:
+                    return self.finish(
+                        agent_response,
+                        execution_tracing,
+                        started,
+                        "failed",
+                        f"investigation exceeded {self.max_seconds}s time limit",
+                    )
+                except Exception as exc:
+                    log.exception("failed to execute tool %s", function_name)
+                    error = str(exc)  # the real cause, for the trace; the model only gets the generic message
+                    function_response = {"error": f"failed to execute tool {function_name}"}
 
                 self.add_event(
                     execution_tracing,
@@ -181,6 +207,11 @@ class Agent:
                 )
                 log.info("step %s: tool %s %.0f ms", step, function_name, f.elapsed_ms)
 
+                if len(function_calls) == 1 and function_name == finish_tool and error is None:
+                    return self.finish(
+                        agent_response, execution_tracing, started, "success", function_response
+                    )
+
                 formatted_response = self.provider.get_function_response(
                     function_call, {"untrusted_data": function_response}
                 )
@@ -188,7 +219,7 @@ class Agent:
 
             self.provider.append_history(history, role, function_response_parts)
 
-        return self.finish(agent_response, execution_tracing, "failed", "Agent step limit reached.")
+        return self.finish(agent_response, execution_tracing, started, "failed", "Agent step limit reached.")
 
     def add_event(self, trace: list, **fields):
         if self.trace:
@@ -197,8 +228,18 @@ class Agent:
             trace.append(fields)
 
     def finish(
-        self, agent_response: AgentResponse, trace: list, status: INVESTIGATION_STATUS, response: Any
+        self,
+        agent_response: AgentResponse,
+        trace: list,
+        started: float,
+        status: INVESTIGATION_STATUS,
+        response: Any,
     ) -> AgentResponse:
         agent_response.status, agent_response.response = status, response
-        self.add_event(trace, type="result", status=status)
+        agent_response.duration_ms = (self.clock() - started) * 1000
+        self.add_event(trace, type="result", status=status, duration_ms=agent_response.duration_ms)
         return agent_response
+
+    def check_deadline(self, started: float) -> None:
+        if self.clock() - started > self.max_seconds:
+            raise ProcessDeadlineError(f"investigation exceeded {self.max_seconds}s time limit")

@@ -9,3 +9,7 @@ test-integration:
 
 migrate:
 	uv run --env-file .env alembic upgrade head
+
+format:
+	uv run ruff check --fix .
+	uv run ruff format .

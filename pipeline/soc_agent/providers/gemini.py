@@ -16,9 +16,6 @@ class Gemini(Provider):
         _tools = [types.FunctionDeclaration(**self.get_tool_definition(t)) for t in tools]
         return [types.Tool(function_declarations=_tools)]
 
-    def get_config(self, tools: list[types.Tool]):
-        return types.GenerateContentConfig(system_instruction=self.system_prompt, tools=tools)
-
     @property
     def client(self):
         if not self._client:
@@ -29,10 +26,15 @@ class Gemini(Provider):
     def get_tool_definition(self, tool: Tool) -> dict:
         return {"name": tool.name, "description": tool.description, "parameters_json_schema": tool.parameters}
 
-    def generate(self, history: list, tools: list[types.Tool]):
-        return self.client.models.generate_content(
-            model=self.model, contents=history, config=self.get_config(tools)
+    def generate(self, history: list, tools: list[types.Tool], **kwargs: dict[str, Any]):
+        force_toolcall = kwargs.get("force_toolcall", False)
+        mode = types.FunctionCallingConfigMode.ANY if force_toolcall else types.FunctionCallingConfigMode.AUTO
+        config = types.GenerateContentConfig(
+            system_instruction=self.system_prompt,
+            tools=tools,
+            tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode)),
         )
+        return self.client.models.generate_content(model=self.model, contents=history, config=config)
 
     def get_response_text(self, response: types.GenerateContentResponse) -> str | None:
         return response.text

@@ -1,3 +1,5 @@
+from itertools import chain, repeat
+
 import pytest
 from google.genai import types
 from pydantic import Field
@@ -59,12 +61,12 @@ def with_usage(response: types.GenerateContentResponse, prompt: int, output: int
 
 
 def make_agent(
-    responses, get_host=lambda host: HOST, max_iteration: int = 3, **agent_options
+    responses, get_host=lambda args: HOST, max_iteration: int = 3, **agent_options
 ) -> tuple[Agent, FakeModels]:
-    provider = Gemini("models/test", "you are a SOC investigator", "HIGH", max_iteration=max_iteration)
+    provider = Gemini("models/test", "you are a SOC investigator", "HIGH")
     provider._client = FakeClient(responses)
     tools = {"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)}
-    return Agent(tools, provider, **agent_options), provider._client.models
+    return Agent(tools, provider, max_iteration=max_iteration, **agent_options), provider._client.models
 
 
 def function_responses(content: types.Content) -> list[tuple[str, dict]]:
@@ -89,7 +91,7 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
     looked_up = []
     agent, models = make_agent(
         [calls(("get_host", {"host": "build-01"})), answer("build-01 is a CI server")],
-        get_host=lambda host: looked_up.append(host) or HOST,
+        get_host=lambda args: looked_up.append(args.host) or HOST,
     )
 
     result = agent.execute("What kind of machine is build-01?")
@@ -125,13 +127,13 @@ def test_every_call_in_one_turn_gets_a_response():
     assert [name for name, _ in function_responses(contents[2])] == ["get_host", "get_host"]
 
 
-def broken_tool(host):
+def broken_tool(args):
     raise TimeoutError("EDR did not answer")
 
 
 @pytest.mark.parametrize(
     "tool_name, get_host",
-    [("get_host", broken_tool), ("delete_host", lambda host: HOST)],
+    [("get_host", broken_tool), ("delete_host", lambda args: HOST)],
     ids=["tool fails", "unknown tool"],
 )
 def test_a_tool_error_goes_back_to_the_model_instead_of_ending_the_investigation(tool_name, get_host):
@@ -245,7 +247,7 @@ def test_arguments_that_break_the_schema_never_reach_the_tool(args, problem):
     looked_up = []
     agent, models = make_agent(
         [calls(("get_host", args)), answer("let me fix that")],
-        get_host=lambda host: looked_up.append(host) or HOST,
+        get_host=lambda args: looked_up.append(args.host) or HOST,
     )
 
     agent.execute("What kind of machine is build-01?")
@@ -260,7 +262,7 @@ def test_tool_calls_beyond_the_cap_in_one_turn_are_refused():
     looked_up = []
     agent, models = make_agent(
         [calls(*[("get_host", {"host": f"host-{i}"}) for i in range(3)]), answer("done")],
-        get_host=lambda host: looked_up.append(host) or HOST,
+        get_host=lambda args: looked_up.append(args.host) or HOST,
         max_tool_calls_per_turn=2,
     )
 
@@ -273,7 +275,7 @@ def test_tool_calls_beyond_the_cap_in_one_turn_are_refused():
 
 
 def test_the_investigation_stops_when_its_time_budget_is_spent():
-    clock = iter([0, 1, 301])  # started, before step 0, before step 1
+    clock = chain([0, 1], repeat(301))  # started, before step 0, then 301 from step 1 on
     agent, models = make_agent(
         [calls(("get_host", {"host": "build-01"})), answer("never asked")],
         clock=lambda: next(clock),

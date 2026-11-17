@@ -34,7 +34,7 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
-    def generate(self, history: list, tools: Any):
+    def generate(self, history: list, tools: Any, **kwargs: dict[str, Any]):
         raise NotImplementedError()
 
     @abstractmethod
