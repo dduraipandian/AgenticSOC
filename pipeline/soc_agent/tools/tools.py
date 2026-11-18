@@ -64,3 +64,14 @@ def tool_map(tools: list[Tool]) -> dict[str, Tool]:
         by_name[t.name] = t
 
     return by_name
+
+
+def update_tools(tools: dict[str, Tool], tool_list: list[Tool]):
+    new_tools = tool_map(tool_list)
+    overlapping_tools = set(tools).intersection(set(new_tools))
+
+    if overlapping_tools:
+        raise DuplicateToolError(f"{overlapping_tools} are already in the tool list")
+
+    tools.update(new_tools)
+    return tools

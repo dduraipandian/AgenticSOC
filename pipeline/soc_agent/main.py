@@ -1,15 +1,21 @@
+import logging
 from pathlib import Path
+from typing import Any
 
 from config import config
 from pipeline.soc_agent.agent import Agent
 from pipeline.soc_agent.providers.gemini import Gemini
 from pipeline.soc_agent.providers.providers import Provider
-from pipeline.soc_agent.tools import TOOL_LIST
+from pipeline.soc_agent.tools import TOOL_FACTORIES, TOOL_LIST
 from pipeline.soc_agent.tools.tools import Tool, tool_map
+from vendors import VENDORS
+from vendors.base import make_client
 
 GEMINI_MODEL = "models/gemini-3.5-flash-lite"
 
 BASE_AGENT_PATH = Path(__file__).parent
+
+log = logging.getLogger("agent")
 
 
 class SystemPromptNotFound(Exception): ...
@@ -37,7 +43,35 @@ def get_system_prompt(name: str, path: Path = BASE_AGENT_PATH) -> str:
     return sp_path.read_text()
 
 
-def main(name: str, question: str):
+def build_tools(app_config) -> dict:
+    tool_list = list(TOOL_LIST)
+    for source, vendor_config in app_config.adapters.items():
+        actors = vendor_config.get("actors", {})
+        if "agent" not in actors:
+            continue
+
+        agent_config: dict[str, Any] = actors["agent"]
+
+        if agent_config.get("enabled") == False:
+            continue
+
+        vendor_api_cls = VENDORS[source]
+
+        # use actor's own key
+        client = make_client(vendor_config["url"], agent_config["api-key"], agent_config.get("timeout", 10))
+        vendor_instance = vendor_api_cls(client, vendor_config)
+        make_vendor_tools = TOOL_FACTORIES.get(source)
+
+        if callable(make_vendor_tools):
+            tool_list += make_vendor_tools(vendor_instance)
+        else:
+            log.warning(f"no tools are provided for {source}")
+
+    tools = tool_map(tool_list)
+    return tools
+
+
+def soc_investigation(question: str, name: str = "soc_investigation"):
     system_prompt_set = load_system_prompts()
     if name not in system_prompt_set:
         raise SystemPromptNotFound(f"system prompt {name} not found.")
@@ -51,11 +85,11 @@ def main(name: str, question: str):
 
     system_prompt = get_system_prompt(name)
 
-    tools = tool_map(TOOL_LIST)
+    tools = build_tools(app_config)
     gemini_model = gemini_config.pop("model", GEMINI_MODEL)
-    provider = Gemini(gemini_model, system_prompt, "HIGH", **gemini_config)
+    provider = Gemini(gemini_model, system_prompt, "XHIGH", **gemini_config)
     run_agent(question, tools, provider, agent_task_config, **agent_config)
 
 
 if __name__ == "__main__":
-    main("soc_investigation", "")
+    soc_investigation("What do you know about host build-01?")

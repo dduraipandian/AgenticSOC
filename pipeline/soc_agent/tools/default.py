@@ -11,7 +11,8 @@ Confidence = Literal["low", "medium", "high"]
 class SubmitInvestigationArgs(ToolArgs):
     verdict: Verdict = Field(
         description=(
-            "Your conclusion about the case. malicious: the evidence shows attacker activity. "
+            "Your conclusion about the case. "
+            "malicious: the evidence shows attacker activity. "
             "benign: the evidence shows a legitimate explanation for every alert in the case. "
             "inconclusive: the evidence is not enough to decide either way."
         )

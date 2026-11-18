@@ -4,6 +4,8 @@ DEFAULT_LIMIT = 100
 
 
 class SentrixEDR(VendorAPI):
+    name = "sentrix-edr"
+
     def get_detections(self, cursor: str | None, limit: int = DEFAULT_LIMIT) -> dict:
         detections_config = self.api_config.get("detections", {})
         path = detections_config["path"]
