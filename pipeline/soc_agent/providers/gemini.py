@@ -11,6 +11,12 @@ log = logging.getLogger("gemini")
 
 GEMINI_MODEL = "models/gemini-3.5-flash-lite"
 
+# One model call must not outlast the investigation's time budget: the agent checks the budget only between
+# steps, so a call that hangs can only be stopped by its own timeout. Overridable in config (timeout_ms,
+# retry_attempts under providers.gemini).
+TIMEOUT_MS = 60_000
+RETRY_ATTEMPTS = 3  # the first try included; retried on 408, 429 and 5xx with backoff
+
 
 class Gemini(Provider):
     def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
@@ -24,7 +30,15 @@ class Gemini(Provider):
     @property
     def client(self):
         if not self._client:
-            self._client = genai.Client()
+            self._client = genai.Client(
+                http_options=types.HttpOptions(
+                    timeout=self.provider_config.get("timeout_ms", TIMEOUT_MS),
+                    retry_options=types.HttpRetryOptions(
+                        attempts=self.provider_config.get("retry_attempts", RETRY_ATTEMPTS),
+                        http_status_codes=[408, 429, 500, 502, 503, 504],
+                    ),
+                )
+            )
 
         return self._client
 

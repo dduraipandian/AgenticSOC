@@ -9,3 +9,5 @@ providers:
   gemini:
     model: "models/gemini-3.5-flash-lite"
     reasoning: high
+    timeout_ms: 60000      # per model call; the agent cannot interrupt a call that hangs
+    retry_attempts: 3      # including the first try; 408, 429 and 5xx are retried

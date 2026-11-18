@@ -21,7 +21,7 @@ TASKS: dict[str, dict] = {
     },
     "case_summary": {
         "finish_tool": "submit_case_summary",
-        "tools": ["get_host", "get_process_tree", "search_telemetry", "case_details", "submit_case_summary"],
+        "tools": ["get_host", "get_process_tree", "search_telemetry", "submit_case_summary"],
     },
 }
 
