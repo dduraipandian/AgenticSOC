@@ -102,33 +102,39 @@ def agent_task(name: str, question: str, app_config: config.AppConfig, pool: Con
     return run_agent(question, tools, provider, agent_task_config, **agent_config)
 
 
-def soc_investigation(case_id: int):
+def investigate_case(case_id: int, app_config: config.AppConfig, pool: ConnectionPool) -> InvestigationRow:
+    """One investigation of one case, using the caller's pool: the CLI below and the portal API both use it."""
+    store = CaseStore()
+    with pool.connection() as conn:
+        case = store.get_case(conn, case_id)
+        alerts = store.get_case_alerts(conn, case_id)
+
+    if case is None:
+        raise ValueError(f"case {case_id} not found")
+    question = (
+        case_summary(case, alerts)
+        + "\nthe case you are investigating is given in full above; use the case tools only for its related cases."
+    )
+    log.info(question)
+    response = agent_task("soc_investigation", question, app_config, pool)
+
+    # every run is saved, failed ones too; case["version"] is the version the agent was given.
+    # The case's agent_status changes in the same transaction, so the portal never sees one without the other.
+    row = InvestigationRow.from_agent_response(case_id, case["version"], response)
+    with pool.connection() as conn, conn.transaction():
+        investigation_id = InvestigationStore().save(conn, row)
+        store.set_agent_status(conn, case_id, "done" if row.status == "success" else "failed")
+
+    log.info("saved investigation %s for case %s: %s %s", investigation_id, case_id, row.status, row.verdict)
+    return row
+
+
+def soc_investigation(case_id: int) -> InvestigationRow:
     app_config = config.load_config()
     with make_pool(app_config.settings.DATABASE_URL) as pool:
-        store = CaseStore()
-        with pool.connection() as conn:
-            case = store.get_case(conn, case_id)
-            alerts = store.get_case_alerts(conn, case_id)
-
-        if case is None:
-            raise ValueError(f"case {case_id} not found")
-        question = (
-            case_summary(case, alerts)
-            + "\nthe case you are investigating is given in full above; use the case tools only for its related cases."
-        )
-        log.info(question)
-        response = agent_task("soc_investigation", question, app_config, pool)
-
-        # every run is saved, failed ones too; case["version"] is the version the agent was given
-        row = InvestigationRow.from_agent_response(case_id, case["version"], response)
-        with pool.connection() as conn:
-            investigation_id = InvestigationStore().save(conn, row)
-        log.info(
-            "saved investigation %s for case %s: %s %s", investigation_id, case_id, row.status, row.verdict
-        )
-        return investigation_id
+        return investigate_case(case_id, app_config, pool)
 
 
 if __name__ == "__main__":
-    soc_investigation(1)
+    soc_investigation(3)
     # agent_task("case_summary", "Summarise case 1.")

@@ -1,5 +1,3 @@
-"""Database rows -> portal response models. Kept apart from the routes so each mapping is a small function."""
-
 import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -13,6 +11,7 @@ from api.models import (
     CaseSummary,
     Entities,
     EvidenceItem,
+    InvestigationFailure,
     InvestigationView,
     QueueItem,
 )
@@ -41,14 +40,11 @@ def case_summary(case: dict) -> CaseSummary:
 
 
 def agent_status(case: dict, latest_run: dict | None) -> AgentStatus:
-    """Derived from the latest run until cases carry an agent_status column."""
-    if latest_run is None:
-        return "pending"
-    if latest_run["status"] == "failed":
-        return "failed"
-    if latest_run["case_version"] < case["version"]:
+    """The case's stored status, except that a verdict on an older case version is shown as superseded."""
+    status = case["agent_status"]
+    if status == "done" and latest_run is not None and latest_run["case_version"] < case["version"]:
         return "superseded"  # alerts arrived after the agent read the case
-    return "done"
+    return status
 
 
 def queue_item(case: dict, latest_run: dict | None) -> QueueItem:
@@ -160,5 +156,17 @@ def investigation_view(run: dict) -> InvestigationView:
         evidence=evidence_items(run["evidence"], run["completed_at"]),
         evidence_hash=run["evidence_hash"],
         completed_at=run["completed_at"],
+        steps=agent_steps(run["steps"]),
+    )
+
+
+def investigation_failure(run: dict) -> InvestigationFailure:
+    """A run that ended without a verdict: why it stopped, and the steps it took before that."""
+    return InvestigationFailure(
+        investigation_id=str(run["investigation_id"]),
+        case_version=run["case_version"],
+        error=run["error"],
+        completed_at=run["completed_at"],
+        duration_ms=run["duration_ms"],
         steps=agent_steps(run["steps"]),
     )

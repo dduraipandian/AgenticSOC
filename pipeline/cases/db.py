@@ -181,3 +181,21 @@ class CaseStore:
                 dict(statuses=statuses, min_severity=min_severity, entity=entity, limit=limit),
             )
             return cur.fetchall()
+
+    # One UPDATE that both checks and sets, so two requests can't both start a run of the same case.
+    def claim_for_investigation(self, conn, case_id: int) -> bool:
+        row = conn.execute(
+            """UPDATE pipeline.cases SET agent_status = 'investigating'
+               WHERE case_id = %s AND agent_status <> 'investigating' RETURNING case_id""",
+            (case_id,),
+        ).fetchone()
+        return row is not None
+
+    def set_agent_status(self, conn, case_id: int, status: str) -> None:
+        conn.execute("UPDATE pipeline.cases SET agent_status = %s WHERE case_id = %s", (status, case_id))
+
+    # Runs started in-process die with the process: at startup nothing can still be investigating.
+    def reset_interrupted(self, conn) -> int:
+        return conn.execute(
+            "UPDATE pipeline.cases SET agent_status = 'pending' WHERE agent_status = 'investigating'"
+        ).rowcount

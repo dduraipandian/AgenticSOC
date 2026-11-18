@@ -1,9 +1,3 @@
-"""Response models for the portal, matching portal_ui/openapi.yaml.
-
-Every route declares one of these as its response_model, so FastAPI validates what is sent: a field that is
-missing or misnamed fails here, as a server error, instead of as a blank screen in the UI.
-"""
-
 from datetime import datetime
 from typing import Any, Literal
 
@@ -112,11 +106,26 @@ class InvestigationView(BaseModel):
     steps: list[AgentStep]
 
 
+class InvestigationFailure(BaseModel):
+    investigation_id: str
+    case_version: int
+    error: str
+    completed_at: datetime
+    duration_ms: int
+    steps: list[AgentStep]
+
+
 class Investigations(BaseModel):
     case_id: int
     agent_status: AgentStatus
     latest: InvestigationView | None
     history: list[InvestigationView]  # earlier investigations, newest first
+    last_failure: InvestigationFailure | None  # the newest run, when it failed
+
+
+class InvestigationStarted(BaseModel):
+    case_id: int
+    agent_status: Literal["investigating"] = "investigating"
 
 
 class Problem(BaseModel):
