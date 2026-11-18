@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pipeline.soc_agent.tools.tools import Tool
 
-REASONING_LEVEL = Literal["HIGH", "LOW"]
+REASONING_LEVEL = Literal["HIGH", "LOW", "XHIGH", "MEDIUM"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +18,7 @@ class TokenUsage:
 class Provider:
     def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
         self.model = model
+        self.reasoning_level = reasoning_level
         self.system_prompt = system_prompt
         self.provider_config = kwargs
 

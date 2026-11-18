@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from google import genai
@@ -5,6 +6,8 @@ from google.genai import types
 
 from pipeline.soc_agent.providers.providers import REASONING_LEVEL, Provider, TokenUsage
 from pipeline.soc_agent.tools.tools import Tool
+
+log = logging.getLogger("gemini")
 
 
 class Gemini(Provider):
@@ -29,9 +32,17 @@ class Gemini(Provider):
     def generate(self, history: list, tools: list[types.Tool], **kwargs: dict[str, Any]):
         force_toolcall = kwargs.get("force_toolcall", False)
         mode = types.FunctionCallingConfigMode.ANY if force_toolcall else types.FunctionCallingConfigMode.AUTO
+
+        try:
+            thinking_level = types.ThinkingLevel[self.reasoning_level.upper()]
+        except Exception as e:  # noqa BLE001
+            log.warning(f"invalid gemini reasoning level {self.reasoning_level} {e}")
+            thinking_level = types.ThinkingLevel["MEDIUM"]
+
         config = types.GenerateContentConfig(
             system_instruction=self.system_prompt,
             tools=tools,
+            thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
             tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode)),
         )
         return self.client.models.generate_content(model=self.model, contents=history, config=config)

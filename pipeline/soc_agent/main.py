@@ -29,7 +29,7 @@ def run_agent(
 
     agent = Agent(tools, provider, task_config, **agent_config)
     reponse = agent.execute(question=question)
-    print(reponse)
+    print(reponse.response)
 
 
 def load_system_prompts(path: Path = BASE_AGENT_PATH) -> set:
@@ -87,7 +87,8 @@ def soc_investigation(question: str, name: str = "soc_investigation"):
 
     tools = build_tools(app_config)
     gemini_model = gemini_config.pop("model", GEMINI_MODEL)
-    provider = Gemini(gemini_model, system_prompt, "XHIGH", **gemini_config)
+    reasoning = gemini_config.pop("reasoning", GEMINI_MODEL)
+    provider = Gemini(gemini_model, system_prompt, reasoning, **gemini_config)
     run_agent(question, tools, provider, agent_task_config, **agent_config)
 
 
