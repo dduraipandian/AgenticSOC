@@ -6,6 +6,8 @@ from pipeline.soc_agent.tools.tools import Tool
 
 REASONING_LEVEL = Literal["HIGH", "LOW", "XHIGH", "MEDIUM"]
 
+DEFAULT_REASONING_LEVEL = "MEDIUM"
+
 
 @dataclass(frozen=True, slots=True)
 class TokenUsage:

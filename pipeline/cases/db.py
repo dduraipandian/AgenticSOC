@@ -151,10 +151,33 @@ class CaseStore:
     def get_case_alerts(self, conn, case_id: int) -> list[dict]:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
-                """SELECT a.alert_time, a.severity, a.category, a.technique, a.host, a.user_name,
-                                  host(a.ip) AS ip, a.process
+                """SELECT a.alert_id, a.source, a.vendor_event_id, a.alert_time, a.severity, a.category,
+                                  a.technique, a.host, a.user_name, host(a.ip) AS ip, a.process, a.network, a.file
                            FROM pipeline.case_alerts ca JOIN pipeline.alerts a USING (alert_id)
                            WHERE ca.case_id = %(case_id)s ORDER BY a.alert_time""",
                 dict(case_id=case_id),
+            )
+            return cur.fetchall()
+
+    # Cases most recently updated first. `entity` matches a host, user or IP exactly.
+    def list_cases(
+        self,
+        conn,
+        statuses: list[str] | None = None,
+        min_severity: int | None = None,
+        entity: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """SELECT * FROM pipeline.cases
+                   WHERE (%(statuses)s::text[] IS NULL OR status = ANY(%(statuses)s::text[]))
+                     AND (%(min_severity)s::smallint IS NULL OR severity >= %(min_severity)s::smallint)
+                     AND (%(entity)s::text IS NULL
+                          OR %(entity)s::text = ANY(hosts) OR %(entity)s::text = ANY(users)
+                          OR %(entity)s::text = ANY(ips))
+                   ORDER BY updated_at DESC, case_id DESC
+                   LIMIT %(limit)s""",
+                dict(statuses=statuses, min_severity=min_severity, entity=entity, limit=limit),
             )
             return cur.fetchall()

@@ -9,6 +9,8 @@ from pipeline.soc_agent.tools.tools import Tool
 
 log = logging.getLogger("gemini")
 
+GEMINI_MODEL = "models/gemini-3.5-flash-lite"
+
 
 class Gemini(Provider):
     def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
