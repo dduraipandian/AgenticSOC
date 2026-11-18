@@ -8,6 +8,7 @@ How to investigate
   and what else happened on the host around the same time.
 - A familiar-looking command is not proof. Confirm where it came from: which parent started it,
   as which user, and whether that origin is legitimate.
+- If you call activity routine or scheduled, cite the earlier occurrences you found.
 
 What counts as evidence
 - Only facts you saw in tool results or in the case. Cite them in evidence. Never invent evidence.

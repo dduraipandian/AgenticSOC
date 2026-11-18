@@ -14,6 +14,7 @@ from pipeline.soc_agent.tasks import get_task, select_tools
 from pipeline.soc_agent.tools import TOOL_FACTORIES, TOOL_LIST
 from pipeline.soc_agent.tools.case_tools import make_case_tools
 from pipeline.soc_agent.tools.tools import Tool, tool_map
+from pipeline.cases.case_summary import case_summary
 from vendors import VENDORS
 from vendors.base import make_client
 
@@ -35,7 +36,7 @@ def run_agent(
 
     agent = Agent(tools, provider, task_config, **agent_config)
     reponse = agent.execute(question=question)
-    print(reponse.response)
+    print(reponse)
 
 
 def load_system_prompts(path: Path = BASE_AGENT_PATH) -> set:
@@ -79,7 +80,7 @@ def build_tools(app_config, pool: ConnectionPool) -> dict:
     return tools
 
 
-def agent_task(name: str, question: str):
+def agent_task(name: str, question: str, app_config: config.AppConfig, pool: ConnectionPool):
     task = get_task(name)
 
     system_prompt_set = load_system_prompts()
@@ -98,13 +99,27 @@ def agent_task(name: str, question: str):
     system_prompt = get_system_prompt(name)
     provider = Gemini(gemini_model, system_prompt, reasoning, **gemini_config)
 
+    tools = select_tools(
+        name, task, build_tools(app_config, pool)
+    )  # only this task's tools reach the model
+    run_agent(question, tools, provider, agent_task_config, **agent_config)
+
+
+def soc_investigation(case_id: int):
+    app_config = config.load_config()
     with make_pool(app_config.settings.DATABASE_URL) as pool:
-        tools = select_tools(
-            name, task, build_tools(app_config, pool)
-        )  # only this task's tools reach the model
-        run_agent(question, tools, provider, agent_task_config, **agent_config)
+        store = CaseStore()
+        with pool.connection() as conn:
+            case = store.get_case(conn, case_id)
+            alerts = store.get_case_alerts(conn, case_id)
+
+        if case is None:
+            raise ValueError(f"case {case_id} not found")
+        question = case_summary(case, alerts) + "\nthe case you are investigating is given in full above; use the case tools only for its related cases."
+        log.info(question)
+        agent_task("soc_investigation", question, app_config, pool)
 
 
 if __name__ == "__main__":
-    # agent_task("soc_investigation", "What do you know about host build-01?")
-    agent_task("case_summary", "Summarise case 1.")
+    soc_investigation(1)
+    # agent_task("case_summary", "Summarise case 1.")

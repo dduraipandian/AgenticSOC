@@ -1,5 +1,5 @@
 agent:
-  max_iteration: 5
+  max_iteration: 10
   trace: true
   trace_streaming: false
   max_tool_calls_per_turn: 5

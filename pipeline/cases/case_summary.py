@@ -4,7 +4,7 @@ def case_summary(case: dict, alerts: list[dict]) -> str:
     ]
     for a in alerts:
         p = a["process"] or {}
-        lineage = " <- ".join(f"{x.get('cmd')} ({x.get('pid')})" for x in p.get("lineage", []))
+        lineage = " <- ".join(f"{x.get('cmd')} ({x.get('pid')})" for x in p.get("ancestors", []))
         lines.append(
             f"- {a['alert_time']:%Y-%m-%d %H:%M:%S}Z {a['category']} severity {a['severity']} "
             f"on {a['host']}: pid {p.get('pid')} {p.get('cmd')!r} as {a['user_name']}"
