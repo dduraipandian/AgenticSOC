@@ -2,6 +2,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from psycopg_pool import ConnectionPool
+
 from common.db import make_pool
 from config import config
 from pipeline.cases.db import CaseStore
@@ -47,7 +49,7 @@ def get_system_prompt(name: str, path: Path = BASE_AGENT_PATH) -> str:
     return sp_path.read_text()
 
 
-def build_tools(app_config) -> dict:
+def build_tools(app_config, pool: ConnectionPool) -> dict:
     tool_list = list(TOOL_LIST)
     for source, vendor_config in app_config.adapters.items():
         actors = vendor_config.get("actors", {})
@@ -71,8 +73,7 @@ def build_tools(app_config) -> dict:
         else:
             log.warning(f"no tools are provided for {source}")
 
-    connection_pool = make_pool(app_config.settings.DATABASE_URL)
-    tool_list += make_case_tools(connection_pool, CaseStore())
+    tool_list += make_case_tools(pool, CaseStore())
 
     tools = tool_map(tool_list)
     return tools
@@ -91,13 +92,17 @@ def agent_task(name: str, question: str):
     agent_config = app_config.model_providers.get("agent", {})
     gemini_config = dict(model_provider_config.get("gemini", {}))
 
-    tools = select_tools(name, task, build_tools(app_config))  # only this task's tools reach the model
     gemini_model = gemini_config.pop("model", GEMINI_MODEL)
     reasoning = gemini_config.pop("reasoning", GEMINI_MODEL)
 
     system_prompt = get_system_prompt(name)
     provider = Gemini(gemini_model, system_prompt, reasoning, **gemini_config)
-    run_agent(question, tools, provider, agent_task_config, **agent_config)
+
+    with make_pool(app_config.settings.DATABASE_URL) as pool:
+        tools = select_tools(
+            name, task, build_tools(app_config, pool)
+        )  # only this task's tools reach the model
+        run_agent(question, tools, provider, agent_task_config, **agent_config)
 
 
 if __name__ == "__main__":

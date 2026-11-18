@@ -99,35 +99,35 @@ def save_events(
 
 def main():
     app_config = config.load_config()
-    puller_pool = make_pool(app_config.settings.DATABASE_URL)
+    # with: the pool is closed on Ctrl-C or a crash too, instead of during interpreter shutdown
+    with make_pool(app_config.settings.DATABASE_URL) as puller_pool:
+        checkpoint_store = CheckpointStore()
+        puller_store = PullerEventStore()
 
-    checkpoint_store = CheckpointStore()
-    puller_store = PullerEventStore()
+        for adapter_name, adapter_config in app_config.adapters.items():
+            actors = adapter_config.get("actors", {})
+            if "puller" not in actors:
+                continue
 
-    for adapter_name, adapter_config in app_config.adapters.items():
-        actors = adapter_config.get("actors", {})
-        if "puller" not in actors:
-            continue
+            puller_config: dict[str, Any] = actors["puller"]
 
-        puller_config: dict[str, Any] = actors["puller"]
+            if puller_config.get("enabled") == False:
+                continue
 
-        if puller_config.get("enabled") == False:
-            continue
+            if adapter_name not in ADAPTERS:
+                continue
 
-        if adapter_name not in ADAPTERS:
-            continue
+            adapter_cls = ADAPTERS[adapter_name]
 
-        adapter_cls = ADAPTERS[adapter_name]
+            # use actor's own key; with: the client's connections are closed when the pull stops
+            with make_client(
+                adapter_config["url"], puller_config["api-key"], puller_config.get("timeout", 10)
+            ) as client:
+                api = adapter_cls.api_class(client, adapter_config)
+                adapter_instance = adapter_cls(api, puller_config)
 
-        # use actor's own key
-        client = make_client(
-            adapter_config["url"], puller_config["api-key"], puller_config.get("timeout", 10)
-        )
-        api = adapter_cls.api_class(client, adapter_config)
-        adapter_instance = adapter_cls(api, puller_config)
-
-        events_gen = pull_data(adapter_name, puller_pool, adapter_instance, checkpoint_store)
-        save_events(adapter_name, puller_pool, checkpoint_store, puller_store, events_gen)
+                events_gen = pull_data(adapter_name, puller_pool, adapter_instance, checkpoint_store)
+                save_events(adapter_name, puller_pool, checkpoint_store, puller_store, events_gen)
 
 
 if __name__ == "__main__":

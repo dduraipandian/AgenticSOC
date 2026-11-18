@@ -29,7 +29,7 @@ class SubmitCaseSummaryArgs(ToolArgs):
 
 def submit_case_summary(args: SubmitCaseSummaryArgs) -> dict:
     """Submit the finished case summary. This ends the task. Call it once, on its own,
-        when the summary covers every alert in the case."""
+    when the summary covers every alert in the case."""
     return args.model_dump()
 
 

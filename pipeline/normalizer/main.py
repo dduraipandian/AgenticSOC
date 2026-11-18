@@ -120,27 +120,27 @@ def save_alerts(
 
 def main():
     app_config = config.load_config()
-    normalizer_pool = make_pool(app_config.settings.DATABASE_URL)
+    # with: the pool is closed on Ctrl-C or a crash too, instead of during interpreter shutdown
+    with make_pool(app_config.settings.DATABASE_URL) as normalizer_pool:
+        checkpoint_store = NormalizerCheckpointStore()
+        reader = RawEventReader()
+        alert_store = AlertStore()
 
-    checkpoint_store = NormalizerCheckpointStore()
-    reader = RawEventReader()
-    alert_store = AlertStore()
+        for source, source_config in app_config.adapters.items():
+            actors = source_config.get("actors", {})
+            if "normalizer" not in actors:
+                continue
 
-    for source, source_config in app_config.adapters.items():
-        actors = source_config.get("actors", {})
-        if "normalizer" not in actors:
-            continue
+            normalizer_config: dict[str, Any] = actors["normalizer"]
 
-        normalizer_config: dict[str, Any] = actors["normalizer"]
+            if normalizer_config.get("enabled") == False:
+                continue
 
-        if normalizer_config.get("enabled") == False:
-            continue
+            if source not in NORMALIZERS:
+                continue
 
-        if source not in NORMALIZERS:
-            continue
-
-        alert_gen = normalize_batch(source, normalizer_pool, checkpoint_store, reader, normalizer_config)
-        save_alerts(source, normalizer_pool, checkpoint_store, alert_store, alert_gen)
+            alert_gen = normalize_batch(source, normalizer_pool, checkpoint_store, reader, normalizer_config)
+            save_alerts(source, normalizer_pool, checkpoint_store, alert_store, alert_gen)
 
 
 if __name__ == "__main__":

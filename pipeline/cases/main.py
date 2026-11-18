@@ -135,24 +135,24 @@ def build_cases(
 
 def main():
     app_config = config.load_config()
-    case_pool = make_pool(app_config.settings.DATABASE_URL)
+    # with: the pool is closed on Ctrl-C or a crash too, instead of during interpreter shutdown
+    with make_pool(app_config.settings.DATABASE_URL) as case_pool:
+        checkpoint_store = CaseCheckpointStore()
+        reader = AlertReader()
+        case_store = CaseStore()
 
-    checkpoint_store = CaseCheckpointStore()
-    reader = AlertReader()
-    case_store = CaseStore()
+        for source, source_config in app_config.adapters.items():
+            actors = source_config.get("actors", {})
+            if "cases" not in actors:
+                continue
 
-    for source, source_config in app_config.adapters.items():
-        actors = source_config.get("actors", {})
-        if "cases" not in actors:
-            continue
+            case_config: dict[str, Any] = actors["cases"]
 
-        case_config: dict[str, Any] = actors["cases"]
+            if case_config.get("enabled") == False:
+                continue
 
-        if case_config.get("enabled") == False:
-            continue
-
-        alert_gen = read_alerts(source, case_pool, checkpoint_store, reader, case_config)
-        build_cases(source, case_pool, checkpoint_store, case_store, alert_gen, case_config)
+            alert_gen = read_alerts(source, case_pool, checkpoint_store, reader, case_config)
+            build_cases(source, case_pool, checkpoint_store, case_store, alert_gen, case_config)
 
 
 if __name__ == "__main__":
