@@ -88,12 +88,22 @@ def test_a_bad_hostname_from_the_model_never_reaches_the_edr():
     assert seen == []  # rejected by the schema, before any request
 
 
-def test_the_agent_tools_are_built_from_config():
+def test_the_agent_tools_are_built_from_config(monkeypatch):
+    # the case tools' database pool is never used here, so don't open a real one
+    monkeypatch.setattr("pipeline.soc_agent.main.make_pool", lambda url: None)
     app_config = SimpleNamespace(
-        adapters={"sentrix-edr": {**VENDOR_CONFIG, "actors": {"agent": {"api-key": "agent-key"}}}}
+        adapters={"sentrix-edr": {**VENDOR_CONFIG, "actors": {"agent": {"api-key": "agent-key"}}}},
+        settings=SimpleNamespace(DATABASE_URL="postgresql://unused"),
     )
 
     tools = build_tools(app_config)  # building a client does not connect, so no network is needed
 
-    assert set(tools) == {"submit_investigation", "get_host"}
+    assert set(tools) == {
+        "submit_investigation",
+        "get_host",
+        "get_process_tree",
+        "search_telemetry",
+        "case_details",
+        "case_summary",
+    }
     assert all(t.description for t in tools.values())

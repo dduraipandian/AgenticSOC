@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from psycopg.rows import dict_row
+
 
 @dataclass(frozen=True)
 class AlertRow:
@@ -138,3 +140,21 @@ class CaseStore:
                 """INSERT INTO pipeline.case_alerts (alert_id, case_id) VALUES (%s, %s)""",
                 [(a.alert_id, case_id) for a in alerts],
             )
+
+    def get_case(self, conn, case_id: int) -> dict:
+        with conn.cursor(row_factory=dict_row) as cur:
+            return cur.execute(
+                """SELECT * FROM pipeline.cases WHERE case_id = %(case_id)s""",
+                dict(case_id=case_id),
+            ).fetchone()
+
+    def get_case_alerts(self, conn, case_id: int) -> list[dict]:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """SELECT a.alert_time, a.severity, a.category, a.technique, a.host, a.user_name,
+                                  host(a.ip) AS ip, a.process
+                           FROM pipeline.case_alerts ca JOIN pipeline.alerts a USING (alert_id)
+                           WHERE ca.case_id = %(case_id)s ORDER BY a.alert_time""",
+                dict(case_id=case_id),
+            )
+            return cur.fetchall()

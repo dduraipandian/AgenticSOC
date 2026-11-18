@@ -9,6 +9,3 @@ providers:
   gemini:
     model: "models/gemini-3.5-flash-lite"
     reasoning: high
-agent_tasks:
-  soc_investigation:
-    finish_tool: submit_investigation

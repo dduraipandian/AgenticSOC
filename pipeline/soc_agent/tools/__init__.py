@@ -7,6 +7,4 @@ from vendors.base import VendorAPI
 
 TOOL_LIST = [SUBMIT_INVESTIGATION]
 
-TOOL_FACTORIES: dict[str, Callable[[VendorAPI], list[Tool]]] = {
-    "sentrix-edr": make_edr_tools,
-}
+TOOL_FACTORIES: dict[str, Callable[[VendorAPI], list[Tool]]] = {"sentrix-edr": make_edr_tools}

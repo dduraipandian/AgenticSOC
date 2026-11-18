@@ -24,7 +24,7 @@ class SentrixEDR(VendorAPI):
         data = self._get(path, host=host, pid=pid)
         return data
 
-    def get_search_telemetry(
+    def search_telemetry(
         self, host: str, contains: str | None, since_ms: int | None, limit: int = 20
     ) -> dict:
         telemetry_config = self.api_config.get("telemetry", {})
