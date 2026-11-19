@@ -14,6 +14,7 @@ from api.models import (
     InvestigationFailure,
     InvestigationView,
     QueueItem,
+    StepDetail,
 )
 
 # The agent reports confidence as a label; the contract wants 0-1. Midpoints of each band.
@@ -85,7 +86,9 @@ def _ms_to_datetime(ms: float) -> datetime:
 
 
 def agent_steps(trace: list[dict]) -> list[AgentStep]:
-    """The agent's trace events -> the portal's steps. The final `result` event is not a step."""
+    """The agent's trace events -> the portal's steps. The final `result` event is not a step, and a `reminder`
+    event marks its model step. A step's text and result are not here: see step_detail."""
+    reminded = {event.get("step") for event in trace if event.get("type") == "reminder"}
     steps = []
     for event in trace:
         if event.get("type") not in ("model", "tool"):
@@ -97,7 +100,12 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
 
         if event["type"] == "model":
             calls = event.get("tool_calls") or []
-            summary = f"called {', '.join(calls)}" if calls else "answered"
+            if calls:
+                summary = f"called {', '.join(calls)}"
+            elif event.get("step") in reminded:
+                summary = "answered without a tool call; reminded"
+            else:
+                summary = "answered"
             step = AgentStep(
                 index=event["seq"],
                 kind="llm",
@@ -107,6 +115,7 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
                 tokens_in=event.get("prompt_tokens") or 0,
                 tokens_out=(event.get("output_tokens") or 0) + (event.get("thoughts_tokens") or 0),
                 summary=f"error: {error}" if error else summary,
+                error=error,
             )
         else:
             args = ", ".join(f"{k}={v}" for k, v in (event.get("args") or {}).items())
@@ -119,9 +128,26 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
                 tokens_in=0,
                 tokens_out=0,
                 summary=f"{event['name']}({args})" + (f" -> error: {error}" if error else ""),
+                args=event.get("args"),
+                error=error,
             )
         steps.append(step)
     return steps
+
+
+def step_detail(investigation_id: str, event: dict) -> StepDetail | None:
+    if event.get("type") not in ("model", "tool"):
+        return None
+    return StepDetail(
+        investigation_id=investigation_id,
+        index=event["seq"],
+        kind="llm" if event["type"] == "model" else "tool",
+        name="model" if event["type"] == "model" else event["name"],
+        text=event.get("text"),
+        args=event.get("args"),
+        result=event.get("result"),
+        error=event.get("error"),
+    )
 
 
 def evidence_items(evidence: Any, captured_at: datetime) -> list[EvidenceItem]:

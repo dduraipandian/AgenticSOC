@@ -74,7 +74,10 @@ class Gemini(Provider):
         return self.client.models.generate_content(model=model, contents=history, config=config)
 
     def get_response_text(self, response: types.GenerateContentResponse) -> str | None:
-        return response.text
+        if not response.candidates or not response.candidates[0].content:
+            return None
+        parts = response.candidates[0].content.parts or []
+        return "".join(p.text for p in parts if p.text and not p.thought) or None
 
     def append_history(self, history: list, role: str, content: Any):
         if isinstance(content, str):

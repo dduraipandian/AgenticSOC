@@ -116,6 +116,15 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
     assert (end["type"], end["status"]) == ("result", "success")  # the UI stops on this
     assert result.execution_tracing[0]["tool_calls"] == ["get_host"]
 
+    # what the UI shows inside each step: the model's words and the tool's answer
+    first_model, tool, last_model = steps
+    assert first_model["text"] is None  # a turn of only tool calls has no text
+    assert (tool["args"], tool["result"]) == (
+        {"host": "build-01"},
+        HOST,
+    )  # unwrapped, as the tool returned it
+    assert last_model["text"] == "build-01 is a CI server"
+
 
 def test_every_call_in_one_turn_gets_a_response():
     agent, models = make_agent(

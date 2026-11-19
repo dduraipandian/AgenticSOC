@@ -155,6 +155,7 @@ class Agent:
                 output_tokens=usage_metadata.output_token_count,
                 thoughts_tokens=usage_metadata.thoughts_token_count,
                 tool_calls=self.provider.get_all_function_names(function_calls),
+                text=self.provider.get_response_text(response),
                 error=None,
             )
             log.info("step %s: model call %.0f ms, %s tool calls", step, t.elapsed_ms, len(function_calls))
@@ -227,6 +228,7 @@ class Agent:
                     type="tool",
                     name=function_name,
                     args=function_args,
+                    result=function_response,
                     duration_ms=f.elapsed_ms,
                     error=error,
                 )

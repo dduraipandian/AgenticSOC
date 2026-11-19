@@ -4,9 +4,10 @@ from collections.abc import Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from psycopg_pool import ConnectionPool, PoolTimeout
@@ -20,6 +21,7 @@ from api.models import (
     InvestigationStarted,
     ProposalStatus,
     QueueItem,
+    StepDetail,
 )
 from common.db import make_pool
 from pipeline.cases.db import CaseStore
@@ -170,6 +172,15 @@ def create_app(
             history=views[1:],
             last_failure=mapping.investigation_failure(runs[0]) if newest_failed else None,
         )
+
+    @app.get("/investigations/{investigation_id}/steps/{index}", response_model=StepDetail)
+    def get_step(investigation_id: UUID, index: Annotated[int, Path(ge=0)], conn: Conn):
+        # ge=0: Postgres reads a negative index from the end of the array
+        event = inv_store.get_step(conn, investigation_id, index)
+        step = mapping.step_detail(str(investigation_id), event) if event else None
+        if step is None:  # no such run, no such index, or a trace event that is not a step
+            raise NotFound(f"step {index} of investigation {investigation_id} not found")
+        return step
 
     @app.post("/investigations/{case_id}", status_code=202, response_model=InvestigationStarted)
     def start_investigation(case_id: int, conn: Conn, background: BackgroundTasks, request: Request):

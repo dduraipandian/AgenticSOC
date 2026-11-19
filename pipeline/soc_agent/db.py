@@ -88,9 +88,18 @@ class InvestigationStore:
             values,
         ).fetchone()[0]
 
-    # every column except history: the full conversation is for debugging and too large for the portal
     _COLUMNS = """investigation_id, case_id, case_version, status, verdict, confidence, rationale, evidence,
-                  evidence_hash, error, steps, prompt_tokens, output_tokens, duration_ms, started_at, completed_at"""
+                  evidence_hash, error,
+                  (SELECT coalesce(jsonb_agg(e.step - 'text' - 'result' ORDER BY e.n), '[]')
+                   FROM jsonb_array_elements(steps) WITH ORDINALITY AS e(step, n)) AS steps,
+                  prompt_tokens, output_tokens, duration_ms, started_at, completed_at"""
+
+    def get_step(self, conn, investigation_id, index: int) -> dict | None:
+        row = conn.execute(
+            "SELECT steps -> %(index)s FROM pipeline.investigations WHERE investigation_id = %(id)s",
+            dict(id=investigation_id, index=index),
+        ).fetchone()
+        return row[0] if row else None
 
     def get_by_case(self, conn, case_id: int) -> list[dict]:
         """A case's runs, newest first (uuidv7 ids break ties between runs that completed together)."""

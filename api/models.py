@@ -82,6 +82,19 @@ class AgentStep(BaseModel):
     tokens_in: int
     tokens_out: int
     summary: str
+    args: dict[str, Any] | None = None  # tool: the arguments the model gave
+    error: str | None = None  # why the model call or tool call failed
+
+
+class StepDetail(BaseModel):
+    investigation_id: str
+    index: int
+    kind: Literal["llm", "tool"]
+    name: str
+    text: str | None  # llm: what the model wrote besides its tool calls
+    args: dict[str, Any] | None  # tool: the arguments the model gave
+    result: Any  # tool: what the tool returned to the model
+    error: str | None
 
 
 class EvidenceItem(BaseModel):
