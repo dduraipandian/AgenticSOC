@@ -86,6 +86,8 @@ class Agent:
         agent_response = AgentResponse(history=history, execution_tracing=execution_tracing, response=None)
         tools = self.provider.get_tools(list(self.tools.values()))
         self.provider.append_history(history, role, question)
+        # the first event: what the agent was asked, so the portal can show it above the steps
+        self.add_event(execution_tracing, type="request", text=question, error=None)
 
         max_iteration = self.options.get("max_iteration", MAX_ITERATION)
         force_toolcall = self.options.get("force_toolcall", FORCE_TOOLCALL)

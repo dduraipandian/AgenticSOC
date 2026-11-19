@@ -106,15 +106,16 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
     assert contents[1].parts[0].function_call.name == "get_host"  # the model's turn, kept as it was
     assert function_responses(contents[2]) == [("get_host", {"untrusted_data": HOST})]  # S8: marked as data
 
-    # flat events, in order: what the UI draws as model -> tool -> model
-    *steps, end = result.execution_tracing
+    # flat events, in order: what the UI draws as request -> model -> tool -> model
+    request, *steps, end = result.execution_tracing
+    assert (request["seq"], request["type"], request["text"]) == (0, "request", "What kind of machine is build-01?")
     assert [(e["step"], e["type"], e.get("name"), e["error"]) for e in steps] == [
         (0, "model", None, None),
         (0, "tool", "get_host", None),
         (1, "model", None, None),
     ]
     assert (end["type"], end["status"]) == ("result", "success")  # the UI stops on this
-    assert result.execution_tracing[0]["tool_calls"] == ["get_host"]
+    assert steps[0]["tool_calls"] == ["get_host"]
 
     # what the UI shows inside each step: the model's words and the tool's answer
     first_model, tool, last_model = steps
@@ -137,10 +138,10 @@ def test_the_thinking_summary_is_traced_apart_from_the_message_and_sent_back_to_
 
     result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
-    first_model = result.execution_tracing[0]
+    _request, first_model, _tool, last_model, _end = result.execution_tracing
     assert first_model["thought"] == "the alert names build-01, so look it up"
     assert first_model["text"] == "Looking up build-01."  # the thinking never ends up in the message
-    assert result.execution_tracing[2]["thought"] is None  # a turn without thinking has none
+    assert last_model["thought"] is None  # a turn without thinking has none
 
     contents, _ = models.requests[1]
     assert contents[1].parts[0].thought  # Gemini gets its own thought parts back unchanged
@@ -320,7 +321,7 @@ def test_a_text_answer_under_force_toolcall_gets_the_reminder_and_the_run_goes_o
     assert [c.role for c in contents] == ["user", "model", "user"]
     assert contents[1].parts[0].text == "it looks benign"  # the model's turn, kept
     assert contents[2].parts[0].text == "Reply only with tool calls. When you are done, call get_host."
-    assert [e["type"] for e in result.execution_tracing][:2] == ["model", "reminder"]
+    assert [e["type"] for e in result.execution_tracing][:3] == ["request", "model", "reminder"]
 
 
 def test_the_investigation_stops_when_its_time_budget_is_spent():

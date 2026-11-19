@@ -146,5 +146,5 @@ def soc_investigation(case_id: int) -> InvestigationRow:
 
 
 if __name__ == "__main__":
-    soc_investigation(1)
+    soc_investigation(3)
     # agent_task("case_summary", "Summarise case 1.")

@@ -91,6 +91,20 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
     reminded = {event.get("step") for event in trace if event.get("type") == "reminder"}
     steps = []
     for event in trace:
+        if event.get("type") == "request":  # what the agent was asked; its text is in the step detail
+            steps.append(
+                AgentStep(
+                    index=event["seq"],
+                    kind="request",
+                    name="request",
+                    started_at=_ms_to_datetime(event["at"]),
+                    duration_ms=0,
+                    tokens_in=0,
+                    tokens_out=0,
+                    summary="the question given to the agent",
+                )
+            )
+            continue
         if event.get("type") not in ("model", "tool"):
             continue
 
@@ -135,14 +149,19 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
     return steps
 
 
+KINDS = {"request": "request", "model": "llm", "tool": "tool"}  # trace event type -> step kind
+
+
 def step_detail(investigation_id: str, event: dict) -> StepDetail | None:
-    if event.get("type") not in ("model", "tool"):
+    """One step in full. None for trace events that are not steps (reminder, result)."""
+    kind = KINDS.get(event.get("type"))
+    if kind is None:
         return None
     return StepDetail(
         investigation_id=investigation_id,
         index=event["seq"],
-        kind="llm" if event["type"] == "model" else "tool",
-        name="model" if event["type"] == "model" else event["name"],
+        kind=kind,
+        name=event["name"] if kind == "tool" else {"llm": "model", "request": "request"}[kind],
         text=event.get("text"),
         thought=event.get("thought"),
         args=event.get("args"),

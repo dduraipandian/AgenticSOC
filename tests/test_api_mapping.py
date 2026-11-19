@@ -53,8 +53,19 @@ def test_the_step_list_stays_small_and_the_detail_has_the_text_and_result():
     )
 
 
-def test_only_model_and_tool_events_are_steps_with_detail():
+def test_only_request_model_and_tool_events_are_steps_with_detail():
     assert step_detail(RUN, END) is None  # its index exists in the trace, but it is not a step
+
+
+def test_the_request_is_the_first_step_and_its_text_is_in_the_detail():
+    request = {"seq": 0, "type": "request", "at": AT - 10, "text": "Case 3: 1 alert(s) on eng-ws-03", "error": None}
+
+    first, *_ = agent_steps([request, MODEL | {"seq": 1}, TOOL | {"seq": 2}])
+
+    assert (first.index, first.kind, first.name, first.tokens_in, first.duration_ms) == (0, "request", "request", 0, 0)
+    assert "text" not in first.model_dump()  # the question itself is fetched with the detail
+    detail = step_detail(RUN, request)
+    assert (detail.kind, detail.text) == ("request", "Case 3: 1 alert(s) on eng-ws-03")
 
 
 def test_a_run_saved_before_text_and_result_were_traced_has_them_as_null():

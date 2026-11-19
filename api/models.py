@@ -75,7 +75,7 @@ class CaseDetail(BaseModel):
 
 class AgentStep(BaseModel):
     index: int
-    kind: Literal["llm", "tool"]
+    kind: Literal["request", "llm", "tool"]
     name: str
     started_at: datetime
     duration_ms: int
@@ -89,7 +89,7 @@ class AgentStep(BaseModel):
 class StepDetail(BaseModel):
     investigation_id: str
     index: int
-    kind: Literal["llm", "tool"]
+    kind: Literal["request", "llm", "tool"]
     name: str
     text: str | None  # llm: what the model wrote besides its tool calls
     thought: str | None  # llm: the model's thinking summary
