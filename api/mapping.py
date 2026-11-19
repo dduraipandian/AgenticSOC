@@ -144,6 +144,7 @@ def step_detail(investigation_id: str, event: dict) -> StepDetail | None:
         kind="llm" if event["type"] == "model" else "tool",
         name="model" if event["type"] == "model" else event["name"],
         text=event.get("text"),
+        thought=event.get("thought"),
         args=event.get("args"),
         result=event.get("result"),
         error=event.get("error"),

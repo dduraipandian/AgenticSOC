@@ -90,7 +90,7 @@ class InvestigationStore:
 
     _COLUMNS = """investigation_id, case_id, case_version, status, verdict, confidence, rationale, evidence,
                   evidence_hash, error,
-                  (SELECT coalesce(jsonb_agg(e.step - 'text' - 'result' ORDER BY e.n), '[]')
+                  (SELECT coalesce(jsonb_agg(e.step - 'text' - 'result' - 'thought' ORDER BY e.n), '[]')
                    FROM jsonb_array_elements(steps) WITH ORDINALITY AS e(step, n)) AS steps,
                   prompt_tokens, output_tokens, duration_ms, started_at, completed_at"""
 

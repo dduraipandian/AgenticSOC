@@ -62,6 +62,10 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
+    def get_model_thought(self, response: Any) -> str | None:
+        raise NotImplementedError()
+
+    @abstractmethod
     def get_function_calls(self, response) -> list:
         raise NotImplementedError()
 

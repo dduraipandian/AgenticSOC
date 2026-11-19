@@ -126,6 +126,26 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
     assert last_model["text"] == "build-01 is a CI server"
 
 
+def test_the_thinking_summary_is_traced_apart_from_the_message_and_sent_back_to_the_model():
+    thinking = types.Part(text="the alert names build-01, so look it up", thought=True)
+    message = types.Part(text="Looking up build-01.")
+    call = types.Part(function_call=types.FunctionCall(name="get_host", args={"host": "build-01"}))
+    turn = types.GenerateContentResponse(
+        candidates=[types.Candidate(content=types.Content(role="model", parts=[thinking, message, call]))]
+    )
+    agent, models = make_agent([turn, answer("build-01 is a CI server")])
+
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
+
+    first_model = result.execution_tracing[0]
+    assert first_model["thought"] == "the alert names build-01, so look it up"
+    assert first_model["text"] == "Looking up build-01."  # the thinking never ends up in the message
+    assert result.execution_tracing[2]["thought"] is None  # a turn without thinking has none
+
+    contents, _ = models.requests[1]
+    assert contents[1].parts[0].thought  # Gemini gets its own thought parts back unchanged
+
+
 def test_every_call_in_one_turn_gets_a_response():
     agent, models = make_agent(
         [calls(("get_host", {"host": "build-01"}), ("get_host", {"host": "laptop-priya"})), answer("done")]

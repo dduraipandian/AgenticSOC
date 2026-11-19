@@ -92,6 +92,7 @@ class StepDetail(BaseModel):
     kind: Literal["llm", "tool"]
     name: str
     text: str | None  # llm: what the model wrote besides its tool calls
+    thought: str | None  # llm: the model's thinking summary
     args: dict[str, Any] | None  # tool: the arguments the model gave
     result: Any  # tool: what the tool returned to the model
     error: str | None

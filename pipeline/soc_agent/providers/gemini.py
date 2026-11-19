@@ -68,7 +68,7 @@ class Gemini(Provider):
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             tools=tools,
-            thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
+            thinking_config=types.ThinkingConfig(thinking_level=thinking_level, include_thoughts=True),
             tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode)),
         )
         return self.client.models.generate_content(model=model, contents=history, config=config)
@@ -78,6 +78,12 @@ class Gemini(Provider):
             return None
         parts = response.candidates[0].content.parts or []
         return "".join(p.text for p in parts if p.text and not p.thought) or None
+
+    def get_model_thought(self, response: types.GenerateContentResponse) -> str | None:
+        if not response.candidates or not response.candidates[0].content:
+            return None
+        parts = response.candidates[0].content.parts or []
+        return "".join(p.text for p in parts if p.text and p.thought) or None
 
     def append_history(self, history: list, role: str, content: Any):
         if isinstance(content, str):

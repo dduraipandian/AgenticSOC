@@ -156,6 +156,7 @@ class Agent:
                 thoughts_tokens=usage_metadata.thoughts_token_count,
                 tool_calls=self.provider.get_all_function_names(function_calls),
                 text=self.provider.get_response_text(response),
+                thought=self.provider.get_model_thought(response),
                 error=None,
             )
             log.info("step %s: model call %.0f ms, %s tool calls", step, t.elapsed_ms, len(function_calls))
@@ -171,6 +172,7 @@ class Agent:
                     step=step,
                     type="reminder",
                     text=self.provider.get_response_text(response),
+                    thought=self.provider.get_model_thought(response),
                     error=None,
                 )
                 log.info("step %s: answered without a tool call; reminded", step)

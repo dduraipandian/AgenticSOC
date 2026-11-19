@@ -63,6 +63,9 @@ class Ollama(Provider):
     def get_response_text(self, response: ChatResponse) -> str | None:
         return response.message.content
 
+    def get_model_thought(self, response: ChatResponse) -> str | None:
+        return response.message.thinking or None
+
     def append_history(self, history: list, role: str, content: Any):
         # Ollama wants one {"role", "content"} message each: a text turn becomes one, and a turn of tool results
         # (already role "tool" messages from get_function_response) adds one message per result.

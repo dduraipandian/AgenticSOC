@@ -14,6 +14,7 @@ MODEL = {
     "thoughts_tokens": 5,
     "tool_calls": ["get_host"],
     "text": "checking the host",
+    "thought": "the alert names build-01, so start with the host",
     "error": None,
 }
 TOOL = {
@@ -35,7 +36,8 @@ def test_the_step_list_stays_small_and_the_detail_has_the_text_and_result():
 
     assert (model.summary, model.tokens_out) == ("called get_host", 15)
     assert (tool.summary, tool.args) == ("get_host(host=build-01)", {"host": "build-01"})
-    assert "text" not in model.model_dump() and "result" not in tool.model_dump()  # fetched one at a time
+    # the large fields are fetched one step at a time
+    assert not {"text", "thought"} & model.model_dump().keys() and "result" not in tool.model_dump()
 
     detail = step_detail(RUN, TOOL)
     assert (detail.kind, detail.name, detail.args, detail.result) == (
@@ -44,7 +46,11 @@ def test_the_step_list_stays_small_and_the_detail_has_the_text_and_result():
         {"host": "build-01"},
         {"found": True, "host": "build-01"},
     )
-    assert step_detail(RUN, MODEL).text == "checking the host"
+    model_detail = step_detail(RUN, MODEL)
+    assert (model_detail.text, model_detail.thought) == (
+        "checking the host",
+        "the alert names build-01, so start with the host",
+    )
 
 
 def test_only_model_and_tool_events_are_steps_with_detail():
