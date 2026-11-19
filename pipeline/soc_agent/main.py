@@ -10,8 +10,8 @@ from pipeline.cases.case_summary import case_summary
 from pipeline.cases.db import CaseStore
 from pipeline.soc_agent.agent import Agent
 from pipeline.soc_agent.db import InvestigationRow, InvestigationStore
-from pipeline.soc_agent.providers.gemini import GEMINI_MODEL, Gemini
-from pipeline.soc_agent.providers.providers import DEFAULT_REASONING_LEVEL, Provider
+from pipeline.soc_agent.providers import PROVIDERS
+from pipeline.soc_agent.providers.providers import Provider
 from pipeline.soc_agent.tasks import get_task, select_tools
 from pipeline.soc_agent.tools import TOOL_FACTORIES, TOOL_LIST
 from pipeline.soc_agent.tools.case_tools import make_case_tools
@@ -28,13 +28,19 @@ class SystemPromptNotFound(Exception): ...
 
 
 def run_agent(
-    question: str, tools: dict[str, Tool], provider: Provider, task_config: dict | None = None, **agent_config
+    task_name,
+    question: str,
+    tools: dict[str, Tool],
+    provider: Provider,
+    task_config: dict | None = None,
+    **agent_config,
 ):
     if not task_config:
         task_config = {}
 
-    agent = Agent(tools, provider, task_config, **agent_config)
-    response = agent.execute(question=question)
+    system_prompt = get_system_prompt(task_name)
+    agent = Agent(tools, provider, **agent_config)
+    response = agent.execute(system_prompt=system_prompt, question=question, **task_config)
     log.info("agent finished: %s %s", response.status, response.response)
     return response
 
@@ -80,29 +86,35 @@ def build_tools(app_config, pool: ConnectionPool) -> dict:
     return tools
 
 
-def agent_task(name: str, question: str, app_config: config.AppConfig, pool: ConnectionPool):
+def get_provider(name, app_config):
+    model_provider_config = app_config.model_providers.get("providers", {})
+    provider_config = dict(model_provider_config.get(name, {}))
+
+    provider_cls = PROVIDERS[name]
+    provider = provider_cls(provider_config)
+
+    return provider
+
+
+def agent_task(name: str, question: str, app_config: config.AppConfig, pool: ConnectionPool, **options):
     task = get_task(name)
 
     system_prompt_set = load_system_prompts()
     if name not in system_prompt_set:
         raise SystemPromptNotFound(f"system prompt {name} not found.")
 
-    model_provider_config = app_config.model_providers.get("providers", {})
-    agent_task_config = {"finish_tool": task["finish_tool"]}
+    provider_name = task["provider_name"]
+    agent_task_config = {"finish_tool": task["finish_tool"], **options}
     agent_config = app_config.model_providers.get("agent", {})
-    gemini_config = dict(model_provider_config.get("gemini", {}))
 
-    gemini_model = gemini_config.pop("model", GEMINI_MODEL)
-    reasoning = gemini_config.pop("reasoning", DEFAULT_REASONING_LEVEL)
-
-    system_prompt = get_system_prompt(name)
-    provider = Gemini(gemini_model, system_prompt, reasoning, **gemini_config)
-
+    provider = get_provider(provider_name, app_config)
     tools = select_tools(name, task, build_tools(app_config, pool))  # only this task's tools reach the model
-    return run_agent(question, tools, provider, agent_task_config, **agent_config)
+    return run_agent(name, question, tools, provider, agent_task_config, **agent_config)
 
 
-def investigate_case(case_id: int, app_config: config.AppConfig, pool: ConnectionPool) -> InvestigationRow:
+def investigate_case(
+    case_id: int, app_config: config.AppConfig, pool: ConnectionPool, **options
+) -> InvestigationRow:
     """One investigation of one case, using the caller's pool: the CLI below and the portal API both use it."""
     store = CaseStore()
     with pool.connection() as conn:
@@ -111,12 +123,10 @@ def investigate_case(case_id: int, app_config: config.AppConfig, pool: Connectio
 
     if case is None:
         raise ValueError(f"case {case_id} not found")
-    question = (
-        case_summary(case, alerts)
-        + "\nthe case you are investigating is given in full above; use the case tools only for its related cases."
-    )
+    question = case_summary(case, alerts)
     log.info(question)
-    response = agent_task("soc_investigation", question, app_config, pool)
+
+    response = agent_task("soc_investigation", question, app_config, pool, **options)
 
     # every run is saved, failed ones too; case["version"] is the version the agent was given.
     # The case's agent_status changes in the same transaction, so the portal never sees one without the other.

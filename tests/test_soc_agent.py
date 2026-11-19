@@ -9,6 +9,7 @@ from pipeline.soc_agent.providers.gemini import Gemini
 from pipeline.soc_agent.tools.tools import Tool, ToolArgs
 
 HOST = {"host": "build-01", "role": "ci-build-server"}
+SYSTEM_PROMPT = "you are a SOC investigator"
 
 
 class HostArgs(ToolArgs):
@@ -63,7 +64,7 @@ def with_usage(response: types.GenerateContentResponse, prompt: int, output: int
 def make_agent(
     responses, get_host=lambda args: HOST, max_iteration: int = 3, **agent_options
 ) -> tuple[Agent, FakeModels]:
-    provider = Gemini("models/test", "you are a SOC investigator", "HIGH")
+    provider = Gemini({"model": "models/test"})
     provider._client = FakeClient(responses)
     tools = {"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)}
     return Agent(tools, provider, max_iteration=max_iteration, **agent_options), provider._client.models
@@ -79,7 +80,7 @@ def function_responses(content: types.Content) -> list[tuple[str, dict]]:
 def test_tools_are_declared_to_the_model():
     agent, models = make_agent([answer("hi")])
 
-    agent.execute("hello")
+    agent.execute(SYSTEM_PROMPT, "hello")
 
     [(_, config)] = models.requests
     [declaration] = config.tools[0].function_declarations
@@ -94,7 +95,7 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
         get_host=lambda args: looked_up.append(args.host) or HOST,
     )
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert (result.status, result.response) == ("success", "build-01 is a CI server")
     assert looked_up == ["build-01"]
@@ -121,7 +122,7 @@ def test_every_call_in_one_turn_gets_a_response():
         [calls(("get_host", {"host": "build-01"}), ("get_host", {"host": "laptop-priya"})), answer("done")]
     )
 
-    agent.execute("Compare build-01 and laptop-priya")
+    agent.execute(SYSTEM_PROMPT, "Compare build-01 and laptop-priya")
 
     contents, _ = models.requests[1]
     assert [name for name, _ in function_responses(contents[2])] == ["get_host", "get_host"]
@@ -141,7 +142,7 @@ def test_a_tool_error_goes_back_to_the_model_instead_of_ending_the_investigation
         [calls((tool_name, {"host": "build-01"})), answer("could not look up build-01")], get_host=get_host
     )
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert (result.status, result.response) == ("success", "could not look up build-01")
 
@@ -154,7 +155,7 @@ def test_a_tool_error_goes_back_to_the_model_instead_of_ending_the_investigation
 def test_the_loop_stops_at_max_iteration():
     agent, models = make_agent([calls(("get_host", {"host": "build-01"}))] * 10, max_iteration=3)
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert result.status == "failed"
     assert len(models.requests) == 3
@@ -165,8 +166,8 @@ def test_the_loop_stops_at_max_iteration():
 def test_each_investigation_starts_with_an_empty_history():
     agent, models = make_agent([calls(("get_host", {"host": "build-01"})), answer("first"), answer("second")])
 
-    agent.execute("case 1")
-    agent.execute("case 2")
+    agent.execute(SYSTEM_PROMPT, "case 1")
+    agent.execute(SYSTEM_PROMPT, "case 2")
 
     contents, _ = models.requests[2]
     assert [c.parts[0].text for c in contents] == ["case 2"]  # nothing of case 1 leaks in
@@ -180,7 +181,7 @@ def test_tokens_are_summed_over_every_step_and_thinking_counts_as_output():
         ]
     )
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert (result.prompt_token_count, result.output_token_count) == (
         250,
@@ -193,7 +194,7 @@ def test_a_failed_model_call_ends_the_investigation_as_failed():
         [calls(("get_host", {"host": "build-01"})), RuntimeError("429 RESOURCE_EXHAUSTED")]
     )
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert result.status == "failed"
     assert len(models.requests) == 2  # not retried by the agent, and nothing raised to the caller
@@ -227,7 +228,7 @@ def model_turn(finish_reason: str, *parts: types.Part) -> types.GenerateContentR
 def test_a_blocked_cut_off_or_empty_answer_fails_the_investigation(response):
     agent, _ = make_agent([response])
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert result.status == "failed"
     *_, end = result.execution_tracing
@@ -250,7 +251,7 @@ def test_arguments_that_break_the_schema_never_reach_the_tool(args, problem):
         get_host=lambda args: looked_up.append(args.host) or HOST,
     )
 
-    agent.execute("What kind of machine is build-01?")
+    agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert looked_up == []
     contents, _ = models.requests[1]
@@ -266,12 +267,31 @@ def test_tool_calls_beyond_the_cap_in_one_turn_are_refused():
         max_tool_calls_per_turn=2,
     )
 
-    agent.execute("Look up three hosts")
+    agent.execute(SYSTEM_PROMPT, "Look up three hosts")
 
     assert looked_up == ["host-0", "host-1"]
     contents, _ = models.requests[1]
     *_, (_, refused) = function_responses(contents[2])  # every call still gets a response
     assert "refused" in refused["untrusted_data"]["error"]
+
+
+def test_a_text_answer_under_force_toolcall_gets_the_reminder_and_the_run_goes_on():
+    agent, models = make_agent(
+        [answer("it looks benign"), calls(("get_host", {"host": "build-01"}))],
+        force_toolcall=True,
+        toolcall_reminder_text="Reply only with tool calls. When you are done, call {finish_tool}.",
+    )
+
+    result = agent.execute(
+        system_prompt=SYSTEM_PROMPT, question="Investigate build-01", finish_tool="get_host"
+    )
+
+    assert result.status == "success"  # the run went on to the finish tool instead of ending on the text
+    contents, _ = models.requests[1]
+    assert [c.role for c in contents] == ["user", "model", "user"]
+    assert contents[1].parts[0].text == "it looks benign"  # the model's turn, kept
+    assert contents[2].parts[0].text == "Reply only with tool calls. When you are done, call get_host."
+    assert [e["type"] for e in result.execution_tracing][:2] == ["model", "reminder"]
 
 
 def test_the_investigation_stops_when_its_time_budget_is_spent():
@@ -282,7 +302,7 @@ def test_the_investigation_stops_when_its_time_budget_is_spent():
         max_seconds=300,
     )
 
-    result = agent.execute("What kind of machine is build-01?")
+    result = agent.execute(SYSTEM_PROMPT, "What kind of machine is build-01?")
 
     assert result.status == "failed"
     assert "300s" in result.response  # says which limit ended it, without pinning the wording

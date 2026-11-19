@@ -18,11 +18,8 @@ class TokenUsage:
 
 
 class Provider:
-    def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
-        self.model = model
-        self.reasoning_level = reasoning_level
-        self.system_prompt = system_prompt
-        self.provider_config = kwargs
+    def __init__(self, config):
+        self.provider_config = config
 
     @abstractmethod
     def get_tools(self, tools: list[Tool]):
@@ -37,7 +34,15 @@ class Provider:
         raise NotImplementedError()
 
     @abstractmethod
-    def generate(self, history: list, tools: Any, **kwargs: dict[str, Any]):
+    def generate(
+        self,
+        model: str | None,
+        system_prompt: str | None,
+        reasoning_level: str | None,
+        history: list,
+        tools: Any,
+        **kwargs: dict[str, Any],
+    ):
         raise NotImplementedError()
 
     @abstractmethod

@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from common.utils import Timer
-from pipeline.soc_agent.providers.providers import Provider
+from pipeline.soc_agent.providers.providers import DEFAULT_REASONING_LEVEL, Provider
 from pipeline.soc_agent.tools.tools import Tool
 
 log = logging.getLogger("agent")
@@ -44,7 +44,6 @@ class Agent:
         self,
         tools: dict[str, Tool],
         provider: Provider,
-        task_config: dict | None = None,
         clock: Callable[[], float] = time.monotonic,
         **kwargs,
     ):
@@ -52,10 +51,12 @@ class Agent:
         self.provider = provider
         self.clock = clock  # monotonic, so a wall-clock jump can't end or extend an investigation
         self.options = kwargs
-        self.task_config = task_config or {}
         self.trace = self.options.get("trace", True)
         self.max_tool_calls_per_turn = self.options.get("max_tool_calls_per_turn", MAX_TOOL_CALLS_PER_TURN)
         self.max_seconds = self.options.get("max_seconds", MAX_SECONDS)
+        # sent back when the model answers in text although force_toolcall is on; "{finish_tool}" in it becomes
+        # the task's finish tool. Without one, a text answer ends the run as before.
+        self.toolcall_reminder_text = self.options.get("toolcall_reminder_text")
 
     def execute_tool(self, name: str, args: dict | None) -> dict:
         tool = self.tools.get(name)
@@ -72,9 +73,15 @@ class Agent:
 
         return tool.function(valid_args)
 
-    def execute(self, question: str, role: str = "user") -> AgentResponse:
+    def execute(
+        self, system_prompt: str | None, question: str, role: str = "user", **options
+    ) -> AgentResponse:
         history = []
         execution_tracing = []
+
+        system_prompt = system_prompt or ""
+        model = options.get("model")
+        reasoning_level = options.get("reasoning_level", DEFAULT_REASONING_LEVEL)
 
         agent_response = AgentResponse(history=history, execution_tracing=execution_tracing, response=None)
         tools = self.provider.get_tools(list(self.tools.values()))
@@ -82,7 +89,7 @@ class Agent:
 
         max_iteration = self.options.get("max_iteration", MAX_ITERATION)
         force_toolcall = self.options.get("force_toolcall", FORCE_TOOLCALL)
-        finish_tool = self.task_config.get("finish_tool")
+        finish_tool = options.get("finish_tool")
 
         started = (
             self.clock()
@@ -92,7 +99,9 @@ class Agent:
             try:
                 self.check_deadline(started)
                 with Timer() as t:
-                    response = self.provider.generate(history, tools, force_toolcall=force_toolcall)
+                    response = self.provider.generate(
+                        model, system_prompt, reasoning_level, history, tools, force_toolcall=force_toolcall
+                    )
             except ProcessDeadlineError:
                 return self.finish(
                     agent_response,
@@ -149,6 +158,22 @@ class Agent:
                 error=None,
             )
             log.info("step %s: model call %.0f ms, %s tool calls", step, t.elapsed_ms, len(function_calls))
+
+            if not function_calls and force_toolcall and self.toolcall_reminder_text:
+                # Gemini's ANY mode guarantees a tool call; Ollama has no such mode, so a model can still answer
+                # in text. Keep its turn, remind it, and go on: max_iteration and max_seconds still bound this.
+                self.provider.append_response_to_history(history, "model", response)
+                reminder = self.toolcall_reminder_text.format(finish_tool=finish_tool)
+                self.provider.append_history(history, role, reminder)
+                self.add_event(
+                    execution_tracing,
+                    step=step,
+                    type="reminder",
+                    text=self.provider.get_response_text(response),
+                    error=None,
+                )
+                log.info("step %s: answered without a tool call; reminded", step)
+                continue
 
             if not function_calls:
                 text = self.provider.get_response_text(response)

@@ -4,23 +4,20 @@ from typing import Any
 from google import genai
 from google.genai import types
 
-from pipeline.soc_agent.providers.providers import REASONING_LEVEL, Provider, TokenUsage
+from pipeline.soc_agent.providers.providers import DEFAULT_REASONING_LEVEL, Provider, TokenUsage
 from pipeline.soc_agent.tools.tools import Tool
 
 log = logging.getLogger("gemini")
 
 GEMINI_MODEL = "models/gemini-3.5-flash-lite"
 
-# One model call must not outlast the investigation's time budget: the agent checks the budget only between
-# steps, so a call that hangs can only be stopped by its own timeout. Overridable in config (timeout_ms,
-# retry_attempts under providers.gemini).
-TIMEOUT_MS = 60_000
+TIMEOUT_MS = 60_000  # can be configured in model_providers.yaml
 RETRY_ATTEMPTS = 3  # the first try included; retried on 408, 429 and 5xx with backoff
 
 
 class Gemini(Provider):
-    def __init__(self, model: str, system_prompt: str, reasoning_level: REASONING_LEVEL, **kwargs):
-        super().__init__(model, system_prompt, reasoning_level, **kwargs)
+    def __init__(self, config):
+        super().__init__(config)
         self._client = None
 
     def get_tools(self, tools: list[Tool]) -> list[types.Tool]:
@@ -45,23 +42,36 @@ class Gemini(Provider):
     def get_tool_definition(self, tool: Tool) -> dict:
         return {"name": tool.name, "description": tool.description, "parameters_json_schema": tool.parameters}
 
-    def generate(self, history: list, tools: list[types.Tool], **kwargs: dict[str, Any]):
+    def generate(
+        self,
+        model: str | None,
+        system_prompt: str | None,
+        reasoning_level: str | None,
+        history: list,
+        tools: list[types.Tool],
+        **kwargs: dict[str, Any],
+    ):
+        model = model or self.provider_config.get("model", GEMINI_MODEL)
+        reasoning_level = reasoning_level or self.provider_config.get(
+            "reasoning_level", DEFAULT_REASONING_LEVEL
+        )
+        system_prompt = system_prompt or ""
         force_toolcall = kwargs.get("force_toolcall", False)
         mode = types.FunctionCallingConfigMode.ANY if force_toolcall else types.FunctionCallingConfigMode.AUTO
 
         try:
-            thinking_level = types.ThinkingLevel[self.reasoning_level.upper()]
+            thinking_level = types.ThinkingLevel[reasoning_level.upper()]
         except Exception as e:  # noqa BLE001
-            log.warning(f"invalid gemini reasoning level {self.reasoning_level} {e}")
+            log.warning(f"invalid gemini reasoning level {reasoning_level} {e}")
             thinking_level = types.ThinkingLevel["MEDIUM"]
 
         config = types.GenerateContentConfig(
-            system_instruction=self.system_prompt,
+            system_instruction=system_prompt,
             tools=tools,
             thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
             tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode)),
         )
-        return self.client.models.generate_content(model=self.model, contents=history, config=config)
+        return self.client.models.generate_content(model=model, contents=history, config=config)
 
     def get_response_text(self, response: types.GenerateContentResponse) -> str | None:
         return response.text

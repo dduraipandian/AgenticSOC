@@ -10,18 +10,13 @@ class TaskDefinitionError(Exception): ...
 TASKS: dict[str, dict] = {
     "soc_investigation": {
         "finish_tool": "submit_investigation",
-        "tools": [
-            "submit_investigation",
-            "get_host",
-            "get_process_tree",
-            "search_telemetry",
-            "case_details",
-            "case_summary",
-        ],
+        "tools": ["submit_investigation", "get_host", "get_process_tree", "search_telemetry"],
+        "provider_name": "gemini",
     },
     "case_summary": {
         "finish_tool": "submit_case_summary",
-        "tools": ["get_host", "get_process_tree", "search_telemetry", "submit_case_summary"],
+        "tools": ["get_host", "get_process_tree", "search_telemetry", "case_details", "submit_case_summary"],
+        "provider_name": "gemini",
     },
 }
 
