@@ -18,16 +18,24 @@ class SentrixEDR(VendorAPI):
         data = self._get(path, host=host)
         return data
 
-    def get_process_tree(self, host: str, pid: int) -> dict:
+    def get_process_tree(self, host: str, pid: int, at_ms: int | None = None) -> dict:
         process_tree_config = self.api_config.get("process_tree", {})
         path = process_tree_config["path"]
-        data = self._get(path, host=host, pid=pid)
+        # at_ms: the process that had this PID at that time, not the newest one (PIDs are reused)
+        data = self._get(path, host=host, pid=pid, at_ms=at_ms)
         return data
 
     def search_telemetry(
-        self, host: str, contains: str | None, since_ms: int | None, limit: int = 20
+        self,
+        host: str,
+        contains: str | None,
+        since_ms: int | None,
+        limit: int = 20,
+        until_ms: int | None = None,
     ) -> dict:
         telemetry_config = self.api_config.get("telemetry", {})
         path = telemetry_config["path"]
-        data = self._get(path, host=host, limit=limit, contains=contains, since_ms=since_ms)
+        data = self._get(
+            path, host=host, limit=limit, contains=contains, since_ms=since_ms, until_ms=until_ms
+        )
         return data

@@ -12,9 +12,9 @@ class SubmitInvestigationArgs(ToolArgs):
     verdict: Verdict = Field(
         description=(
             "Your conclusion about the case. "
-            "malicious: the evidence shows attacker activity. "
+            "malicious: the evidence shows attacker activity or unauthorized access. "
             "benign: the evidence shows a legitimate explanation for every alert in the case. "
-            "inconclusive: the evidence is not enough to decide either way."
+            "inconclusive: the tools could not tell you what caused the activity, or the evidence points both ways."
         )
     )
     confidence: Confidence = Field(
@@ -33,7 +33,7 @@ class SubmitInvestigationArgs(ToolArgs):
     evidence: dict = Field(
         description=(
             "The facts behind the verdict, each taken from a tool result, as name: value pairs, "
-            "e.g. {'parent_process': 'cron', 'user': 'svc-maint', 'script': '/opt/maint/nightly.sh'}. "
+            "e.g. {'process': '<command>', 'parent': '<parent command>', 'user': '<user>'}. "
             "Do not include anything you did not see in a tool result."
         )
     )
@@ -41,7 +41,7 @@ class SubmitInvestigationArgs(ToolArgs):
 
 def submit_investigation(args: SubmitInvestigationArgs) -> dict:
     """Submit your final verdict on the case. This ends the investigation. Call it exactly once, when the
-    evidence is enough to decide, or when no other tool can tell you more; in that case use inconclusive."""
+    evidence is enough to decide, or when no other tool can tell you more."""
     return args.model_dump()
 
 
