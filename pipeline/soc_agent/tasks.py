@@ -11,12 +11,14 @@ TASKS: dict[str, dict] = {
     "soc_investigation": {
         "finish_tool": "submit_investigation",
         "tools": ["submit_investigation", "get_host", "get_process_tree", "search_telemetry"],
-        "provider_name": "gemini",
+        "provider_name": "ollama",
+        "model": "qwen3.5:2b-q4_K_M",
     },
     "case_summary": {
         "finish_tool": "submit_case_summary",
         "tools": ["get_host", "get_process_tree", "search_telemetry", "case_details", "submit_case_summary"],
-        "provider_name": "gemini",
+        "provider_name": "ollama",
+        "model": "qwen3.5:2b-q4_K_M",
     },
 }
 

@@ -51,7 +51,7 @@ class Gemini(Provider):
         tools: list[types.Tool],
         **kwargs: dict[str, Any],
     ):
-        model = model or self.provider_config.get("model", GEMINI_MODEL)
+        model = model or self.provider_config.get("default_model", GEMINI_MODEL)
         reasoning_level = reasoning_level or self.provider_config.get(
             "reasoning_level", DEFAULT_REASONING_LEVEL
         )

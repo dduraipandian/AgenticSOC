@@ -1,3 +1,5 @@
+import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -44,6 +46,11 @@ class Tool:
     @property
     def parameters(self) -> dict:
         return self.args_model.model_json_schema()
+
+    @property
+    def hash(self):
+        defs = {"name": self.name, "description": self.description, "parameters": self.parameters}
+        return hashlib.sha256(json.dumps(defs, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def make_tool(

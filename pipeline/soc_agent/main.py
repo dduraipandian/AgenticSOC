@@ -32,6 +32,7 @@ def run_agent(
     question: str,
     tools: dict[str, Tool],
     provider: Provider,
+    model: str,
     task_config: dict | None = None,
     **agent_config,
 ):
@@ -40,7 +41,7 @@ def run_agent(
 
     system_prompt = get_system_prompt(task_name)
     agent = Agent(tools, provider, **agent_config)
-    response = agent.execute(system_prompt=system_prompt, question=question, **task_config)
+    response = agent.execute(system_prompt=system_prompt, question=question, model=model, **task_config)
     log.info("agent finished: %s %s", response.status, response.response)
     return response
 
@@ -104,12 +105,16 @@ def agent_task(name: str, question: str, app_config: config.AppConfig, pool: Con
         raise SystemPromptNotFound(f"system prompt {name} not found.")
 
     provider_name = task["provider_name"]
-    agent_task_config = {"finish_tool": task["finish_tool"], **options}
+    model_name = task["model"]
     agent_config = app_config.model_providers.get("agent", {})
+    model_options = app_config.model_providers.get("models", {}).get(model_name, {})
+
+    agent_task_config = {"finish_tool": task["finish_tool"], **options}
+    agent_task_config["model_options"] = model_options
 
     provider = get_provider(provider_name, app_config)
     tools = select_tools(name, task, build_tools(app_config, pool))  # only this task's tools reach the model
-    return run_agent(name, question, tools, provider, agent_task_config, **agent_config)
+    return run_agent(name, question, tools, provider, model_name, agent_task_config, **agent_config)
 
 
 def investigate_case(
@@ -146,5 +151,5 @@ def soc_investigation(case_id: int) -> InvestigationRow:
 
 
 if __name__ == "__main__":
-    soc_investigation(3)
+    soc_investigation(2)
     # agent_task("case_summary", "Summarise case 1.")

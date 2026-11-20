@@ -80,7 +80,7 @@ def test_get_host_returns_only_the_fields_the_model_needs():
 
 def test_a_bad_hostname_from_the_model_never_reaches_the_edr():
     edr, seen = edr_with()
-    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"model": "models/test"}))
+    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"default_model": "models/test"}))
 
     with pytest.raises(AgentRuntimeError, match="host: String should match pattern"):
         agent.execute_tool("get_host", {"host": "x/../y"})
@@ -92,7 +92,7 @@ def test_the_alert_time_from_the_case_reaches_the_edr_so_a_reused_pid_is_not_mix
     edr, seen = edr_with(
         httpx.Response(200, json={"process": {}, "lineage": []}), httpx.Response(200, json={})
     )
-    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"model": "models/test"}))
+    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"default_model": "models/test"}))
 
     # the time exactly as the case summary prints it: whole seconds, and the process started within that second
     agent.execute_tool("get_process_tree", {"host": "eng-ws-03", "pid": 39, "at": "2026-11-17 14:09:19Z"})
@@ -104,7 +104,7 @@ def test_the_alert_time_from_the_case_reaches_the_edr_so_a_reused_pid_is_not_mix
 
 def test_a_search_window_written_like_the_case_reaches_the_edr_as_epoch_ms():
     edr, seen = edr_with(httpx.Response(200, json={"events": []}))
-    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"model": "models/test"}))
+    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"default_model": "models/test"}))
 
     agent.execute_tool(
         "search_telemetry",

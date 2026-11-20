@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 from collections.abc import Callable
@@ -7,7 +8,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from common.utils import Timer
-from pipeline.soc_agent.providers.providers import DEFAULT_REASONING_LEVEL, Provider
+from pipeline.soc_agent.providers.providers import Provider
 from pipeline.soc_agent.tools.tools import Tool
 
 log = logging.getLogger("agent")
@@ -74,24 +75,37 @@ class Agent:
         return tool.function(valid_args)
 
     def execute(
-        self, system_prompt: str | None, question: str, role: str = "user", **options
+        self, system_prompt: str | None, question: str, model: str, role: str = "user", **options
     ) -> AgentResponse:
         history = []
         execution_tracing = []
 
+        max_iteration = self.options.get("max_iteration", MAX_ITERATION)
+        force_toolcall = self.options.get("force_toolcall", FORCE_TOOLCALL)
+
         system_prompt = system_prompt or ""
-        model = options.get("model")
-        reasoning_level = options.get("reasoning_level", DEFAULT_REASONING_LEVEL)
+        reasoning_level = options.get("reasoning_level") or self.provider.provider_config.get(
+            "reasoning_level"
+        )
+        finish_tool = options.get("finish_tool")
+        model_options = options.get("model_options", {})
 
         agent_response = AgentResponse(history=history, execution_tracing=execution_tracing, response=None)
         tools = self.provider.get_tools(list(self.tools.values()))
         self.provider.append_history(history, role, question)
         # the first event: what the agent was asked, so the portal can show it above the steps
-        self.add_event(execution_tracing, type="request", text=question, error=None)
-
-        max_iteration = self.options.get("max_iteration", MAX_ITERATION)
-        force_toolcall = self.options.get("force_toolcall", FORCE_TOOLCALL)
-        finish_tool = options.get("finish_tool")
+        self.add_event(
+            execution_tracing,
+            type="request",
+            tools={name: t.hash for name, t in self.tools.items()},
+            model=model,
+            prompt_hash=hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()[:12],
+            reasoning_level=reasoning_level,
+            model_options=model_options,
+            finish_tool=finish_tool if force_toolcall else None,
+            text=question,
+            error=None,
+        )
 
         started = (
             self.clock()
@@ -102,7 +116,13 @@ class Agent:
                 self.check_deadline(started)
                 with Timer() as t:
                     response = self.provider.generate(
-                        model, system_prompt, reasoning_level, history, tools, force_toolcall=force_toolcall
+                        model=model,
+                        system_prompt=system_prompt,
+                        reasoning_level=reasoning_level,
+                        history=history,
+                        tools=tools,
+                        force_toolcall=force_toolcall,
+                        model_options=model_options,
                     )
             except ProcessDeadlineError:
                 return self.finish(

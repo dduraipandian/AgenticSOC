@@ -46,7 +46,8 @@ class Ollama(Provider):
         tools: list,
         **kwargs: dict[str, Any],
     ) -> ChatResponse:
-        model = model or self.provider_config.get("model", DEFAULT_MODEL)
+        model = model or self.provider_config.get("default_model", DEFAULT_MODEL)
+        model_options = kwargs.get("model_options", {})
         system_prompt = system_prompt or ""
 
         system_instruction = [{"role": "system", "content": system_prompt}]
@@ -56,6 +57,7 @@ class Ollama(Provider):
             messages=system_instruction + history,
             tools=tools,
             think=True,
+            options=model_options,
             stream=False,
         )
         return response
