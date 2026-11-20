@@ -1,0 +1,25 @@
+soc_investigation:
+    name: soc_investigation
+    prompt_file: soc_investigation.md
+    finish_tool: submit_investigation
+    tools:
+      - submit_investigation
+      - get_host
+      - get_process_tree
+      - search_telemetry
+    provider: ollama
+    model: bonsai-2:4b
+    reasoning_level: high
+case_summary:
+    name: case_summary
+    prompt_file: case_summary.md
+    finish_tool: submit_case_summary
+    tools:
+      - get_host
+      - get_process_tree
+      - search_telemetry
+      - case_details
+      - submit_case_summary
+    provider: ollama
+    model: bonsai-2:4b
+    reasoning_level: medium

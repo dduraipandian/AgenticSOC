@@ -17,6 +17,7 @@ class AppConfig:
     settings: SystemSettings
     adapters: dict[str, dict]
     model_providers: dict[str, dict]
+    agent_tasks: dict[str, dict]
 
 
 def load_adapter_configs(path: Path):
@@ -30,9 +31,15 @@ def load_model_configs(path: Path):
     return yaml.safe_load(config_file.read_text())
 
 
+def load_agent_task_configs(path: Path):
+    config_file = path.joinpath("agent_tasks.yaml")
+    return yaml.safe_load(config_file.read_text())
+
+
 def load_config(path: Path = BASE_CONFIG_PATH) -> AppConfig:
     return AppConfig(
         settings=SystemSettings(),
         adapters=load_adapter_configs(path),
         model_providers=load_model_configs(path),
+        agent_tasks=load_agent_task_configs(path),
     )

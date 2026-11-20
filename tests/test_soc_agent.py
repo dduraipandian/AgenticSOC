@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from itertools import chain, repeat
+from pathlib import Path
 
 import pytest
 from google.genai import types
@@ -6,6 +8,7 @@ from pydantic import Field
 
 from pipeline.soc_agent.agent import Agent
 from pipeline.soc_agent.providers.gemini import Gemini
+from pipeline.soc_agent.tasks import TaskOption
 from pipeline.soc_agent.tools.tools import Tool, ToolArgs
 
 HOST = {"host": "build-01", "role": "ci-build-server"}
@@ -62,13 +65,32 @@ def with_usage(response: types.GenerateContentResponse, prompt: int, output: int
     return response
 
 
+@dataclass
+class InlinePromptTask(TaskOption):
+    """A task whose system prompt is given as text instead of read from a prompts/ file."""
+
+    prompt_text: str = SYSTEM_PROMPT
+
+    def get_prompt_text(self):
+        return self.prompt_text
+
+
 def make_agent(
-    responses, get_host=lambda args: HOST, max_iteration: int = 3, **agent_options
-) -> tuple[Agent, FakeModels]:
+    responses, get_host=lambda args: HOST, max_iteration: int = 3, finish_tool=None, **agent_options
+):
+    """An agent on a scripted Gemini, and run(question) to execute the test task with it."""
     provider = Gemini({"default_model": MODEL})
     provider._client = FakeClient(responses)
-    tools = {"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)}
-    return Agent(tools, provider, max_iteration=max_iteration, **agent_options), provider._client.models
+    task = InlinePromptTask(
+        name="test",
+        model=MODEL,
+        prompt=Path("inline"),
+        provider=provider,
+        finish_tool=finish_tool,
+        tools={"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)},
+    )
+    agent = Agent(max_iteration=max_iteration, **agent_options)
+    return (lambda question: agent.execute(question, task)), provider._client.models
 
 
 def function_responses(content: types.Content) -> list[tuple[str, dict]]:
@@ -79,9 +101,9 @@ def function_responses(content: types.Content) -> list[tuple[str, dict]]:
 
 
 def test_tools_are_declared_to_the_model():
-    agent, models = make_agent([answer("hi")])
+    run, models = make_agent([answer("hi")])
 
-    agent.execute(SYSTEM_PROMPT, model=MODEL, question="hello")
+    run("hello")
 
     [(_, config)] = models.requests
     [declaration] = config.tools[0].function_declarations
@@ -91,12 +113,12 @@ def test_tools_are_declared_to_the_model():
 
 def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
     looked_up = []
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls(("get_host", {"host": "build-01"})), answer("build-01 is a CI server")],
         get_host=lambda args: looked_up.append(args.host) or HOST,
     )
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert (result.status, result.response) == ("success", "build-01 is a CI server")
     assert looked_up == ["build-01"]
@@ -139,9 +161,9 @@ def test_the_thinking_summary_is_traced_apart_from_the_message_and_sent_back_to_
     turn = types.GenerateContentResponse(
         candidates=[types.Candidate(content=types.Content(role="model", parts=[thinking, message, call]))]
     )
-    agent, models = make_agent([turn, answer("build-01 is a CI server")])
+    run, models = make_agent([turn, answer("build-01 is a CI server")])
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     _request, first_model, _tool, last_model, _end = result.execution_tracing
     assert first_model["thought"] == "the alert names build-01, so look it up"
@@ -153,11 +175,11 @@ def test_the_thinking_summary_is_traced_apart_from_the_message_and_sent_back_to_
 
 
 def test_every_call_in_one_turn_gets_a_response():
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls(("get_host", {"host": "build-01"}), ("get_host", {"host": "laptop-priya"})), answer("done")]
     )
 
-    agent.execute(SYSTEM_PROMPT, model=MODEL, question="Compare build-01 and laptop-priya")
+    run("Compare build-01 and laptop-priya")
 
     contents, _ = models.requests[1]
     assert [name for name, _ in function_responses(contents[2])] == ["get_host", "get_host"]
@@ -173,11 +195,11 @@ def broken_tool(args):
     ids=["tool fails", "unknown tool"],
 )
 def test_a_tool_error_goes_back_to_the_model_instead_of_ending_the_investigation(tool_name, get_host):
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls((tool_name, {"host": "build-01"})), answer("could not look up build-01")], get_host=get_host
     )
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert (result.status, result.response) == ("success", "could not look up build-01")
 
@@ -188,9 +210,9 @@ def test_a_tool_error_goes_back_to_the_model_instead_of_ending_the_investigation
 
 
 def test_the_loop_stops_at_max_iteration():
-    agent, models = make_agent([calls(("get_host", {"host": "build-01"}))] * 10, max_iteration=3)
+    run, models = make_agent([calls(("get_host", {"host": "build-01"}))] * 10, max_iteration=3)
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert result.status == "failed"
     assert len(models.requests) == 3
@@ -199,24 +221,24 @@ def test_the_loop_stops_at_max_iteration():
 
 
 def test_each_investigation_starts_with_an_empty_history():
-    agent, models = make_agent([calls(("get_host", {"host": "build-01"})), answer("first"), answer("second")])
+    run, models = make_agent([calls(("get_host", {"host": "build-01"})), answer("first"), answer("second")])
 
-    agent.execute(SYSTEM_PROMPT, model=MODEL, question="case 1")
-    agent.execute(SYSTEM_PROMPT, model=MODEL, question="case 2")
+    run("case 1")
+    run("case 2")
 
     contents, _ = models.requests[2]
     assert [c.parts[0].text for c in contents] == ["case 2"]  # nothing of case 1 leaks in
 
 
 def test_tokens_are_summed_over_every_step_and_thinking_counts_as_output():
-    agent, _ = make_agent(
+    run, _ = make_agent(
         [
             with_usage(calls(("get_host", {"host": "build-01"})), prompt=100, output=10, thoughts=5),
             with_usage(answer("build-01 is a CI server"), prompt=150, output=20),
         ]
     )
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert (result.prompt_token_count, result.output_token_count) == (
         250,
@@ -225,11 +247,11 @@ def test_tokens_are_summed_over_every_step_and_thinking_counts_as_output():
 
 
 def test_a_failed_model_call_ends_the_investigation_as_failed():
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls(("get_host", {"host": "build-01"})), RuntimeError("429 RESOURCE_EXHAUSTED")]
     )
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert result.status == "failed"
     assert len(models.requests) == 2  # not retried by the agent, and nothing raised to the caller
@@ -261,9 +283,9 @@ def model_turn(finish_reason: str, *parts: types.Part) -> types.GenerateContentR
     ids=["prompt blocked", "answer blocked", "cut off", "empty answer"],
 )
 def test_a_blocked_cut_off_or_empty_answer_fails_the_investigation(response):
-    agent, _ = make_agent([response])
+    run, _ = make_agent([response])
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert result.status == "failed"
     *_, end = result.execution_tracing
@@ -281,12 +303,12 @@ def test_a_blocked_cut_off_or_empty_answer_fails_the_investigation(response):
 )
 def test_arguments_that_break_the_schema_never_reach_the_tool(args, problem):
     looked_up = []
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls(("get_host", args)), answer("let me fix that")],
         get_host=lambda args: looked_up.append(args.host) or HOST,
     )
 
-    agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    run("What kind of machine is build-01?")
 
     assert looked_up == []
     contents, _ = models.requests[1]
@@ -296,13 +318,13 @@ def test_arguments_that_break_the_schema_never_reach_the_tool(args, problem):
 
 def test_tool_calls_beyond_the_cap_in_one_turn_are_refused():
     looked_up = []
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls(*[("get_host", {"host": f"host-{i}"}) for i in range(3)]), answer("done")],
         get_host=lambda args: looked_up.append(args.host) or HOST,
         max_tool_calls_per_turn=2,
     )
 
-    agent.execute(SYSTEM_PROMPT, model=MODEL, question="Look up three hosts")
+    run("Look up three hosts")
 
     assert looked_up == ["host-0", "host-1"]
     contents, _ = models.requests[1]
@@ -311,15 +333,14 @@ def test_tool_calls_beyond_the_cap_in_one_turn_are_refused():
 
 
 def test_a_text_answer_under_force_toolcall_gets_the_reminder_and_the_run_goes_on():
-    agent, models = make_agent(
+    run, models = make_agent(
         [answer("it looks benign"), calls(("get_host", {"host": "build-01"}))],
+        finish_tool="get_host",
         force_toolcall=True,
         toolcall_reminder_text="Reply only with tool calls. When you are done, call {finish_tool}.",
     )
 
-    result = agent.execute(
-        system_prompt=SYSTEM_PROMPT, question="Investigate build-01", model=MODEL, finish_tool="get_host"
-    )
+    result = run("Investigate build-01")
 
     assert result.status == "success"  # the run went on to the finish tool instead of ending on the text
     contents, _ = models.requests[1]
@@ -331,13 +352,13 @@ def test_a_text_answer_under_force_toolcall_gets_the_reminder_and_the_run_goes_o
 
 def test_the_investigation_stops_when_its_time_budget_is_spent():
     clock = chain([0, 1], repeat(301))  # started, before step 0, then 301 from step 1 on
-    agent, models = make_agent(
+    run, models = make_agent(
         [calls(("get_host", {"host": "build-01"})), answer("never asked")],
         clock=lambda: next(clock),
         max_seconds=300,
     )
 
-    result = agent.execute(SYSTEM_PROMPT, model=MODEL, question="What kind of machine is build-01?")
+    result = run("What kind of machine is build-01?")
 
     assert result.status == "failed"
     assert "300s" in result.response  # says which limit ended it, without pinning the wording

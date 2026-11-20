@@ -46,7 +46,7 @@ def default_investigator(case_id: int, pool: ConnectionPool) -> None:
     from config.config import load_config
     from pipeline.soc_agent.main import investigate_case
 
-    investigate_case(case_id, load_config(), pool)
+    investigate_case(case_id, pool, load_config())
 
 
 def run_in_background(investigate: Investigator, pool: ConnectionPool, case_id: int) -> None:

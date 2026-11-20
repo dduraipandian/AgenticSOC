@@ -6,16 +6,13 @@ from psycopg_pool import ConnectionPool
 
 from common.db import make_pool
 from config import config
-from pipeline.cases.case_summary import case_summary
 from pipeline.cases.db import CaseStore
 from pipeline.soc_agent.agent import Agent
-from pipeline.soc_agent.db import InvestigationRow, InvestigationStore
-from pipeline.soc_agent.providers import PROVIDERS
-from pipeline.soc_agent.providers.providers import Provider
-from pipeline.soc_agent.tasks import get_task, select_tools
+from pipeline.soc_agent.domain_tasks import DOMAIN_TASKS
+from pipeline.soc_agent.tasks import UnknownTask, load_domain_tasks
 from pipeline.soc_agent.tools import TOOL_FACTORIES, TOOL_LIST
 from pipeline.soc_agent.tools.case_tools import make_case_tools
-from pipeline.soc_agent.tools.tools import Tool, tool_map
+from pipeline.soc_agent.tools.tools import tool_map
 from vendors import VENDORS
 from vendors.base import make_client
 
@@ -25,36 +22,6 @@ log = logging.getLogger("agent")
 
 
 class SystemPromptNotFound(Exception): ...
-
-
-def run_agent(
-    task_name,
-    question: str,
-    tools: dict[str, Tool],
-    provider: Provider,
-    model: str,
-    task_config: dict | None = None,
-    **agent_config,
-):
-    if not task_config:
-        task_config = {}
-
-    system_prompt = get_system_prompt(task_name)
-    agent = Agent(tools, provider, **agent_config)
-    response = agent.execute(system_prompt=system_prompt, question=question, model=model, **task_config)
-    log.info("agent finished: %s %s", response.status, response.response)
-    return response
-
-
-def load_system_prompts(path: Path = BASE_AGENT_PATH) -> set:
-    sp_path = path.joinpath("prompts")
-    system_prompt_set = {f.stem for f in sp_path.glob("*.md")}
-    return system_prompt_set
-
-
-def get_system_prompt(name: str, path: Path = BASE_AGENT_PATH) -> str:
-    sp_path = path.joinpath("prompts", f"{name}.md")
-    return sp_path.read_text()
 
 
 def build_tools(app_config, pool: ConnectionPool) -> dict:
@@ -87,69 +54,29 @@ def build_tools(app_config, pool: ConnectionPool) -> dict:
     return tools
 
 
-def get_provider(name, app_config):
-    model_provider_config = app_config.model_providers.get("providers", {})
-    provider_config = dict(model_provider_config.get(name, {}))
+def agent_task(name, domain_tasks, pool, /, **kwargs):
+    if name not in domain_tasks:
+        raise UnknownTask(f"{name} not found in the task config.")
 
-    provider_cls = PROVIDERS[name]
-    provider = provider_cls(provider_config)
+    if name not in DOMAIN_TASKS:
+        raise UnknownTask(f"{name} is not implemented or configured.")
 
-    return provider
+    domain_task_config = domain_tasks[name]
+    agent = Agent(**domain_task_config.agent_options)
 
-
-def agent_task(name: str, question: str, app_config: config.AppConfig, pool: ConnectionPool, **options):
-    task = get_task(name)
-
-    system_prompt_set = load_system_prompts()
-    if name not in system_prompt_set:
-        raise SystemPromptNotFound(f"system prompt {name} not found.")
-
-    provider_name = task["provider_name"]
-    model_name = task["model"]
-    agent_config = app_config.model_providers.get("agent", {})
-    model_options = app_config.model_providers.get("models", {}).get(model_name, {})
-
-    agent_task_config = {"finish_tool": task["finish_tool"], **options}
-    agent_task_config["model_options"] = model_options
-
-    provider = get_provider(provider_name, app_config)
-    tools = select_tools(name, task, build_tools(app_config, pool))  # only this task's tools reach the model
-    return run_agent(name, question, tools, provider, model_name, agent_task_config, **agent_config)
+    domain_task_cls = DOMAIN_TASKS[name]
+    domain_task_instance = domain_task_cls(domain_task_config, agent)
+    return domain_task_instance.run(**kwargs, pool=pool)
 
 
-def investigate_case(
-    case_id: int, app_config: config.AppConfig, pool: ConnectionPool, **options
-) -> InvestigationRow:
-    """One investigation of one case, using the caller's pool: the CLI below and the portal API both use it."""
-    store = CaseStore()
-    with pool.connection() as conn:
-        case = store.get_case(conn, case_id)
-        alerts = store.get_case_alerts(conn, case_id)
-
-    if case is None:
-        raise ValueError(f"case {case_id} not found")
-    question = case_summary(case, alerts)
-    log.info(question)
-
-    response = agent_task("soc_investigation", question, app_config, pool, **options)
-
-    # every run is saved, failed ones too; case["version"] is the version the agent was given.
-    # The case's agent_status changes in the same transaction, so the portal never sees one without the other.
-    row = InvestigationRow.from_agent_response(case_id, case["version"], response)
-    with pool.connection() as conn, conn.transaction():
-        investigation_id = InvestigationStore().save(conn, row)
-        store.set_agent_status(conn, case_id, "done" if row.status == "success" else "failed")
-
-    log.info("saved investigation %s for case %s: %s %s", investigation_id, case_id, row.status, row.verdict)
-    return row
-
-
-def soc_investigation(case_id: int) -> InvestigationRow:
-    app_config = config.load_config()
-    with make_pool(app_config.settings.DATABASE_URL) as pool:
-        return investigate_case(case_id, app_config, pool)
+def investigate_case(case_id: int, pool: ConnectionPool, app_config: config.AppConfig | None = None):
+    app_config = app_config or config.load_config()
+    domain_tasks = load_domain_tasks(build_tools(app_config, pool))
+    return agent_task("soc_investigation", domain_tasks, pool, case_id=case_id)
 
 
 if __name__ == "__main__":
-    soc_investigation(2)
-    # agent_task("case_summary", "Summarise case 1.")
+    app_config = config.load_config()
+    case_id = 3
+    with make_pool(app_config.settings.DATABASE_URL) as pool:
+        investigate_case(case_id, pool, app_config)

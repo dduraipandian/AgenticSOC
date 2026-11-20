@@ -5,7 +5,6 @@ import pytest
 
 from pipeline.soc_agent.agent import Agent, AgentRuntimeError
 from pipeline.soc_agent.main import build_tools
-from pipeline.soc_agent.providers.gemini import Gemini
 from pipeline.soc_agent.tools.edr_tools import make_edr_tools
 from pipeline.soc_agent.tools.tools import tool_map
 from vendors.base import InvalidPathValue
@@ -80,10 +79,10 @@ def test_get_host_returns_only_the_fields_the_model_needs():
 
 def test_a_bad_hostname_from_the_model_never_reaches_the_edr():
     edr, seen = edr_with()
-    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"default_model": "models/test"}))
+    agent, tools = Agent(), tool_map(make_edr_tools(edr))
 
     with pytest.raises(AgentRuntimeError, match="host: String should match pattern"):
-        agent.execute_tool("get_host", {"host": "x/../y"})
+        agent.execute_tool(tools, "get_host", {"host": "x/../y"})
 
     assert seen == []  # rejected by the schema, before any request
 
@@ -92,11 +91,13 @@ def test_the_alert_time_from_the_case_reaches_the_edr_so_a_reused_pid_is_not_mix
     edr, seen = edr_with(
         httpx.Response(200, json={"process": {}, "lineage": []}), httpx.Response(200, json={})
     )
-    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"default_model": "models/test"}))
+    agent, tools = Agent(), tool_map(make_edr_tools(edr))
 
     # the time exactly as the case summary prints it: whole seconds, and the process started within that second
-    agent.execute_tool("get_process_tree", {"host": "eng-ws-03", "pid": 39, "at": "2026-11-17 14:09:19Z"})
-    agent.execute_tool("get_process_tree", {"host": "eng-ws-03", "pid": 39})
+    agent.execute_tool(
+        tools, "get_process_tree", {"host": "eng-ws-03", "pid": 39, "at": "2026-11-17 14:09:19Z"}
+    )
+    agent.execute_tool(tools, "get_process_tree", {"host": "eng-ws-03", "pid": 39})
 
     assert seen[0].url.params["at_ms"] == "1794924560000"  # 14:09:19 UTC + 1 s, covering 14:09:19.760
     assert "at_ms" not in seen[1].url.params  # without a time, the EDR's newest process
@@ -104,9 +105,10 @@ def test_the_alert_time_from_the_case_reaches_the_edr_so_a_reused_pid_is_not_mix
 
 def test_a_search_window_written_like_the_case_reaches_the_edr_as_epoch_ms():
     edr, seen = edr_with(httpx.Response(200, json={"events": []}))
-    agent = Agent(tool_map(make_edr_tools(edr)), Gemini({"default_model": "models/test"}))
+    agent, tools = Agent(), tool_map(make_edr_tools(edr))
 
     agent.execute_tool(
+        tools,
         "search_telemetry",
         {"host": "eng-ws-03", "since": "2026-11-17 14:04:19Z", "until": "2026-11-17 14:14:19Z"},
     )
