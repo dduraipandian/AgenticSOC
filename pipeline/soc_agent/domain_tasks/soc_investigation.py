@@ -34,18 +34,20 @@ class SocInvestigationTask(DomainTask):
         alerts = self.store.get_case_alerts(conn, case_id)
         return case_summary(case, alerts), case["version"], alerts
 
-    def investigate_case(self, case_id: int, pool: ConnectionPool) -> InvestigationRow:
-        """One investigation of one case, using the caller's pool: the CLI below and the portal API both use it."""
+    def run_investigation(self, case_id: int, pool: ConnectionPool) -> tuple[InvestigationRow, list[dict]]:
         with pool.connection() as conn:
-            question, case_version, _ = self.build_case_question(conn, case_id)
+            question, case_version, alerts = self.build_case_question(conn, case_id)
 
         log.info(question)
 
         response = self.agent.execute(question, self.task_option)
+        # case["version"] is the version the agent was given
+        return InvestigationRow.from_agent_response(case_id, case_version, response), alerts
 
-        # every run is saved, failed ones too; case["version"] is the version the agent was given.
-        # The case's agent_status changes in the same transaction, so the portal never sees one without the other.
-        row = InvestigationRow.from_agent_response(case_id, case_version, response)
+    def investigate_case(self, case_id: int, pool: ConnectionPool) -> InvestigationRow:
+        """One investigation of one case, using the caller's pool: the CLI below and the portal API both use it."""
+        row, _ = self.run_investigation(case_id, pool)
+
         store = CaseStore()
         with pool.connection() as conn, conn.transaction():
             investigation_id = InvestigationStore().save(conn, row)
