@@ -1,0 +1,29 @@
+agent:
+  max_iteration: 25
+  trace: true
+  trace_streaming: false
+  max_tool_calls_per_turn: 5
+  max_seconds: 1800
+  force_toolcall: True
+  # Sent as a user message when the model answers in text although force_toolcall is on (Ollama cannot force
+  # a tool call; Gemini's ANY mode can). {finish_tool} becomes the task's finish tool.
+  toolcall_reminder_text: "Reply only with tool calls. When you are done, call {finish_tool}."
+providers:
+  gemini:
+    default_model: "models/gemini-3.5-flash-lite"
+    reasoning_level: high
+    timeout_ms: 60000      # per model call; the agent cannot interrupt a call that hangs
+    retry_attempts: 3      # including the first try; 408, 429 and 5xx are retried
+  ollama:
+    default_model: "qwen3.5:2b-q4_K_M"
+    host: http://localhost:11434
+    timeout_ms: 180000
+models:
+  qwen3.5:2b-q4_K_M:
+    num_gpu: 999
+    num_ctx: 65536
+  gemma4:e2b-it-q4_K_M:
+    num_ctx: 65536
+  bonsai-2:4b:
+    num_ctx: 65536
+    num_gpu: 999

@@ -1,0 +1,20 @@
+# Eval variants. Each one is a task from config/agent_tasks.yaml with only the fields listed here changed.
+# Any TaskConfig field can be changed: provider, model, prompt_file, reasoning_level, tools, finish_tool, trace.
+# Keep a variant's name stable once it has runs: reports compare variants by name across batches.
+
+# the production config, unchanged: the baseline every other variant is compared with
+production:
+  task: soc_investigation
+
+gemini-flash-lite:
+  task: soc_investigation
+  provider: gemini
+  model: models/gemini-3.5-flash-lite
+
+qwen2b:
+  task: soc_investigation
+  model: qwen3.5:2b-q4_K_M
+
+gemma-e2b:
+  task: soc_investigation
+  model: gemma4:e2b-it-q4_K_M

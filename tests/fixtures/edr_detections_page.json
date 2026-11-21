@@ -1,0 +1,83 @@
+{
+    "detections": [
+        {
+            "id": "det-1",
+            "ts_ms": 1794469861794,
+            "host": "build-01",
+            "net": null,
+            "file": {
+                "op": "read",
+                "path": "/etc/shadow"
+            },
+            "name": "sensitive_file_read",
+            "process": {
+                "pid": 49,
+                "user": "svc-maint",
+                "cmdline": "awk -F: {print $1, $5} /etc/shadow",
+                "lineage": [
+                    {
+                        "pid": 48,
+                        "user": "svc-maint",
+                        "cmdline": "/bin/bash /opt/maint/nightly.sh"
+                    },
+                    {
+                        "pid": 47,
+                        "user": "svc-maint",
+                        "cmdline": "/bin/sh -c /bin/bash /opt/maint/nightly.sh"
+                    },
+                    {
+                        "pid": 44,
+                        "user": "root",
+                        "cmdline": "/usr/sbin/CRON"
+                    },
+                    {
+                        "pid": 27,
+                        "user": "root",
+                        "cmdline": "/usr/sbin/cron"
+                    },
+                    {
+                        "pid": 1,
+                        "user": "root",
+                        "cmdline": "sleep infinity"
+                    }
+                ],
+                "parent_cmdline": "/bin/bash /opt/maint/nightly.sh"
+            },
+            "severity": 75,
+            "technique": "T1003.008"
+        },
+        {
+            "id": "det-2",
+            "ts_ms": 1794471306221,
+            "host": "eng-ws-03",
+            "net": null,
+            "file": {
+                "op": "read",
+                "path": "/etc/shadow"
+            },
+            "name": "sensitive_file_read",
+            "process": {
+                "pid": 35,
+                "user": "root",
+                "cmdline": "cat /etc/shadow",
+                "lineage": [
+                    {
+                        "pid": 33,
+                        "user": "arun.m",
+                        "cmdline": "sudo -n cat /etc/shadow"
+                    },
+                    {
+                        "pid": 27,
+                        "user": "arun.m",
+                        "cmdline": "bash -c sudo -n cat /etc/shadow > /dev/null"
+                    }
+                ],
+                "parent_cmdline": "sudo -n cat /etc/shadow"
+            },
+            "severity": 75,
+            "technique": "T1003.008"
+        }
+    ],
+    "next_cursor": "Mg==",
+    "has_more": false
+}

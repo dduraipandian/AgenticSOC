@@ -1,0 +1,30 @@
+url: http://localhost:8101
+api:
+  detections:
+    path: /v2/detections
+  hosts:
+    path: /v2/hosts/{host}
+  process_tree:
+    path: /v2/hosts/{host}/processes/{pid}/tree
+  telemetry:
+    path: /v2/telemetry/search
+    limit: 100
+actors:
+  puller:
+    api-key: feed-key
+    timeout: 10
+    retry_max_attempts: 10
+    wait_when_caughtup: 5
+    limit: 100
+  normalizer:
+    batch_size: 100
+    wait_when_caughtup: 5
+  cases:
+    batch_size: 100
+    wait_when_caughtup: 5
+    max_age: 180
+    max_alerts: 100
+    related_age: 360
+  agent:
+    api-key: agent-key
+    timeout: 10
