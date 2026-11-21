@@ -2,7 +2,7 @@
 rationale review all pass; pass^k needs every attempt correct, and stays pending while a review is outstanding."""
 
 from pipeline.soc_agent.evals.graders import Grade
-from pipeline.soc_agent.evals.report import disagreements, summarise, tool_changes
+from pipeline.soc_agent.evals.report import disagreements, run_outcome, summarise, tool_changes
 
 S2 = {3: {"scenario_id": "S2", "expected": {"verdict": "true_positive"}}}
 
@@ -70,3 +70,12 @@ def test_tool_changes_between_two_batches_are_listed():
     a = [run(1, 3, "q", 1, tools={"get_host": "h1", "search_telemetry": "s1"})]
     b = [run(2, 3, "q", 1, tools={"get_host": "h1", "search_telemetry": "s2"})]
     assert tool_changes(a, b) == ["search_telemetry: s1 -> s2"]
+
+
+def test_a_runs_outcome_follows_the_correct_run_rule():
+    assert run_outcome(run(1, 3, "q", 1, failure_kind="infra"), all_pass()) == "infra"
+    assert run_outcome(run(1, 3, "q", 1), all_pass(rationale_human=None)) == "pending_review"
+    assert run_outcome(run(1, 3, "q", 1), all_pass(rationale_human=True)) == "correct"
+    assert run_outcome(run(1, 3, "q", 1), all_pass(rationale_human=False)) == "incorrect"
+    failed_process = {**all_pass(rationale_human=True), "process": Grade("process", 1, False, {})}
+    assert run_outcome(run(1, 3, "q", 1), failed_process) == "incorrect"

@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse
 from psycopg_pool import ConnectionPool, PoolTimeout
 
 from api import mapping
+from api.errors import NotFound, NotReviewable
+from api.evals import add_eval_routes
 from api.models import (
     CaseDetail,
     CaseStatus,
@@ -34,9 +36,6 @@ inv_store = InvestigationStore()
 
 # runs one investigation of a case with the given pool, and saves it (pipeline.soc_agent.main.investigate_case)
 Investigator = Callable[[int, ConnectionPool], object]
-
-
-class NotFound(Exception): ...
 
 
 class AlreadyInvestigating(Exception): ...
@@ -105,6 +104,10 @@ def create_app(
     @app.exception_handler(AlreadyInvestigating)
     def already_investigating(request: Request, exc: AlreadyInvestigating):
         return JSONResponse(status_code=409, content={"error": "already_investigating", "message": str(exc)})
+
+    @app.exception_handler(NotReviewable)
+    def not_reviewable(request: Request, exc: NotReviewable):
+        return JSONResponse(status_code=409, content={"error": "not_reviewable", "message": str(exc)})
 
     @app.exception_handler(psycopg.OperationalError)
     @app.exception_handler(PoolTimeout)
@@ -194,6 +197,8 @@ def create_app(
 
         background.add_task(run_in_background, investigate, request.app.state.pool, case_id)
         return InvestigationStarted(case_id=case_id)
+
+    add_eval_routes(app, Conn)
 
     @app.get("/proposals", response_model=list[dict])
     def list_proposals(case_id: int | None = None, status: ProposalStatus | None = None):

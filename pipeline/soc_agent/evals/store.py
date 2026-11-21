@@ -104,6 +104,23 @@ class EvalStore:
             cur.execute("SELECT * FROM eval.batches WHERE batch_id = %s", (batch_id,))
             return cur.fetchone()
 
+    def list_batches(self, conn) -> list[dict]:
+        """Every batch, newest first, with its last run's time and how many runs count (infra left out)."""
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """SELECT b.*,
+                          (SELECT max(r.completed_at) FROM eval.runs r WHERE r.batch_id = b.batch_id) AS last_run_at,
+                          (SELECT count(*) FROM eval.runs r
+                           WHERE r.batch_id = b.batch_id AND r.failure_kind IS DISTINCT FROM 'infra') AS runs_done
+                   FROM eval.batches b ORDER BY b.started_at DESC, b.batch_id DESC"""
+            )
+            return cur.fetchall()
+
+    def get_run(self, conn, run_id: UUID) -> dict | None:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT * FROM eval.runs WHERE run_id = %s", (run_id,))
+            return cur.fetchone()
+
     def save_run(self, conn, row: EvalRunRow) -> UUID:
         values = asdict(row.investigation) | {k: v for k, v in asdict(row).items() if k != "investigation"}
         for column in (

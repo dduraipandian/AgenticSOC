@@ -145,3 +145,112 @@ class InvestigationStarted(BaseModel):
 class Problem(BaseModel):
     error: str
     message: str | None = None
+
+
+# --- evals (read only, plus the human rationale review) -----------------------------------------------------------
+
+Outcome = Literal["correct", "incorrect", "pending_review", "infra"]
+
+
+class EvalBatchSummary(BaseModel):
+    batch_id: str
+    note: str | None
+    started_at: datetime
+    finished_at: datetime | None
+    last_run_at: datetime | None
+    variants: list[str]
+    case_ids: list[int]
+    k: int
+    runs_done: int  # runs that count: infra failures left out
+    runs_total: int  # variants x cases x k
+
+
+class EvalCase(BaseModel):
+    case_id: int
+    scenario_id: str
+    expected_verdict: str
+
+
+class EvalVariant(BaseModel):
+    name: str
+    provider: str
+    model: str
+    reasoning_level: str | None
+    prompt_file: str
+
+
+class EvalScoreRow(BaseModel):
+    case_id: int
+    scenario_id: str
+    variant: str
+    k: int
+    correct: int
+    pending: int
+    pass_k: bool | None
+    verdict: int
+    process: int
+    grounding: int
+    rationale: int
+    entities_missed: list[str]
+    errors: int
+    infra: int
+    median_ms: float
+    median_tokens: float
+
+
+class EvalRunSummary(BaseModel):
+    run_id: str
+    case_id: int
+    variant: str
+    attempt: int
+    outcome: Outcome
+    verdict: str | None
+    failure_kind: str | None
+    duration_ms: int
+    started_at: datetime
+
+
+class EvalBatchDetail(BaseModel):
+    batch: EvalBatchSummary
+    cases: list[EvalCase]
+    variants: list[EvalVariant]
+    rows: list[EvalScoreRow]
+    runs: list[EvalRunSummary]
+    pending_reviews: int
+    infra: int
+    median_ms: float
+
+
+class EvalGrade(BaseModel):
+    grader: str
+    version: int
+    passed: bool | None
+    details: dict[str, Any]
+
+
+class EvalRunDetail(BaseModel):
+    run_id: str
+    batch_id: str
+    case_id: int
+    variant: str
+    attempt: int
+    outcome: Outcome
+    reviewable: bool  # the code checks passed and it was not an infra failure
+    settings: dict[str, Any]
+    status: str
+    verdict: str | None
+    confidence: str | None
+    rationale: str | None
+    error: str | None
+    evidence: list[EvidenceItem]
+    grades: list[EvalGrade]
+    steps: list[AgentStep]
+    prompt_tokens: int
+    output_tokens: int
+    duration_ms: int
+    started_at: datetime
+
+
+class ReviewRequest(BaseModel):
+    correct: bool
+    note: str | None = None

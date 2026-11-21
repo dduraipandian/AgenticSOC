@@ -16,6 +16,7 @@ import argparse
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Literal
 from uuid import UUID
 
 from common.db import make_pool
@@ -51,6 +52,20 @@ def _passed(grades: dict[str, Grade], name: str) -> bool:
     return grades.get(name) is not None and grades[name].passed is True
 
 
+Outcome = Literal["correct", "incorrect", "pending_review", "infra"]
+
+
+def run_outcome(run: dict, grades: dict[str, Grade]) -> Outcome:
+    """The one rule for a run, used by this report and the portal: infra runs do not count; a run is incorrect when
+    a code check failed or the human review said so, pending until reviewed, and correct after a passing review."""
+    if run.get("failure_kind") == "infra":
+        return "infra"
+    human = grades.get(RATIONALE_HUMAN)
+    if not all(_passed(grades, n) for n in MUST_PASS) or (human is not None and human.passed is False):
+        return "incorrect"
+    return "pending_review" if human is None else "correct"
+
+
 def summarise(
     runs: list[dict], grades: dict[UUID, dict[str, Grade]], labels: dict[int, dict], k: int | None = None
 ) -> list[Row]:
@@ -65,15 +80,9 @@ def summarise(
         counted = [r for r in group if r.get("failure_kind") != "infra"]
         g = [grades.get(r["run_id"], {}) for r in counted]
 
-        correct, pending, failing = 0, 0, []
-        for r, rg in zip(counted, g):
-            human = rg.get(RATIONALE_HUMAN)
-            if not all(_passed(rg, n) for n in MUST_PASS) or (human is not None and human.passed is False):
-                failing.append(r["run_id"])
-            elif human is None:
-                pending += 1
-            else:
-                correct += 1
+        outcomes = [run_outcome(r, rg) for r, rg in zip(counted, g)]
+        correct, pending = outcomes.count("correct"), outcomes.count("pending_review")
+        failing = [r["run_id"] for r, o in zip(counted, outcomes) if o == "incorrect"]
 
         if failing:
             pass_k = False
