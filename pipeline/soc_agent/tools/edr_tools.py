@@ -37,8 +37,8 @@ class ProcessTreeArgs(ToolArgs):
     at: datetime | None = Field(
         default=None,
         description=(
-            "The alert's time, as it appears in the case, e.g. 2026-11-17 14:09:19Z. Process ids are reused, "
-            "so give it to get the process that had this pid when the alert fired, not a later one."
+            "When to look, e.g. the alert's time as it appears in the case: 2026-11-17 14:09:19Z. Without it you "
+            "get whatever process has this pid now, which is often a different program: process ids are reused."
         ),
     )
 
@@ -92,8 +92,8 @@ def make_edr_tools(edr: SentrixEDR) -> list[Tool]:
         }
 
     def get_process_tree(args: ProcessTreeArgs) -> dict:
-        """Show how a process was started on a host: its command line and user, and its parent chain
-        (lineage), nearest parent first. Use it to check where the activity in an alert came from, for
+        """Show how a process was started on a host, as it was at a given time: its command line and user,
+        and its parent chain (lineage), nearest parent first. Use it to check where the activity in an alert came from, for
         example which program launched a command and as which user."""
         # +1 s: the case shows whole seconds, and the process started within that second
         at_ms = epoch_ms(args.at) + 1000 if args.at is not None else None

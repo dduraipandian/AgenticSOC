@@ -22,3 +22,14 @@ gemma-e2b:
 lfm3:
   task: soc_investigation
   model: lfm3:latest
+
+# strong models: do they follow the general principles without a playbook?
+gemini-3.8-flash:
+  task: soc_investigation
+  provider: gemini
+  model: models/gemini-3.8-flash
+
+gemini-4-hydrogen:
+  task: soc_investigation
+  provider: gemini
+  model: models/gemini-4-hydrogen

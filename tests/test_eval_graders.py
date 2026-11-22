@@ -161,12 +161,23 @@ def test_a_cited_fact_must_be_in_the_step_it_cites():
     ]
     grade = grade_grounding(make_run(evidence=evidence, steps=steps))
 
-    assert (grade.version, grade.passed) == (2, False)
+    assert (grade.version, grade.passed) == (3, False)
     assert grade.details["unsupported"] == ["arun.m (step 0)", "470 (step 3)"]
     assert grade.details["missing"] == {
         "arun.m (step 0)": ["arun.m"],
         "470 (step 3)": ["step 3 is not a tool result"],
     }
+
+
+def test_a_value_copied_with_its_key_is_supported_but_evidence_keys_are_not_facts():
+    host = {"found": True, "host": "eng-ws-03", "first_seen": "2026-11-19T19:33:27Z"}
+    steps = [request(), tool("get_host", {"host": "eng-ws-03"}, result=host, step=2), submit()]
+    cited = [{"fact": "host", "value": "first_seen: 2026-11-19T19:33:27Z", "step": 2}]
+    assert grade_grounding(make_run(evidence=cited, steps=steps)).passed is True
+
+    # older {name: value} evidence: its own key "first_host_ip" is not a fact to look for
+    old = make_run(evidence={"first_host_ip": "eng-ws-03"}, steps=steps)
+    assert grade_grounding(old).passed is True
 
 
 def test_rejected_submits_and_tool_errors_are_counted_apart():

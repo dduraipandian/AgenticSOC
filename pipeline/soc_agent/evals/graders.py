@@ -121,7 +121,9 @@ def grade_process(run: dict, alerts: list[dict]) -> Grade:
     return Grade("process", PROCESS_VERSION, all(details.values()), details)
 
 
-GROUNDING_VERSION = 2  # 2: a cited fact must be in the step it cites, not just anywhere in the run
+# 2: a cited fact must be in the step it cites, not just anywhere in the run
+# 3: a result's keys count as shown, so a value copied with its key ("first_seen: ...") is supported
+GROUNDING_VERSION = 3
 
 
 def _cited(evidence: Any) -> bool:
@@ -174,7 +176,10 @@ def grade_grounding(run: dict) -> Grade:
 
     sources = [e.get("text") or "" for e in _events(run, "request")]
     sources += [
-        leaf for e in _events(run, "tool") if e["name"] != finish for leaf in _leaves(e.get("result"))
+        leaf
+        for e in _events(run, "tool")
+        if e["name"] != finish
+        for leaf in _leaves(e.get("result"), keys=True)
     ]
     haystack = _normalise("\n".join(sources))
 

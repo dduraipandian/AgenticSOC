@@ -13,12 +13,14 @@ def normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
-def leaves(value: Any) -> list[str]:
-    """The string and number values inside a value, at any depth. Booleans and nulls carry no fact to check."""
+def leaves(value: Any, keys: bool = False) -> list[str]:
+    """The string and number values inside a value, at any depth. Booleans and nulls carry no fact to check.
+    keys=True adds the dict keys too: for what the agent was shown, where a value copied with its key
+    ("first_seen: 2026-11-19") is a faithful copy. Never for evidence, whose own keys are not facts."""
     if isinstance(value, dict):
-        return [leaf for v in value.values() for leaf in leaves(v)]
+        return [leaf for k, v in value.items() for leaf in ([str(k)] if keys else []) + leaves(v, keys)]
     if isinstance(value, list | tuple):
-        return [leaf for v in value for leaf in leaves(v)]
+        return [leaf for v in value for leaf in leaves(v, keys)]
     if isinstance(value, bool) or value is None:
         return []
     return [str(value)]  # numbers are compared as text
@@ -42,7 +44,7 @@ def missing_facts(value: str, haystack: str) -> list[str]:
 
 def missing_from(value: str, result: Any) -> list[str]:
     """What of `value` is not in this tool result (or case text): empty when the value is backed by it."""
-    return missing_facts(value, normalise("\n".join(leaves(result))))
+    return missing_facts(value, normalise("\n".join(leaves(result, keys=True))))
 
 
 def is_cited(value: str, result: Any) -> bool:
