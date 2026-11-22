@@ -40,7 +40,12 @@ def missing_facts(value: str, haystack: str) -> list[str]:
     return [] if normalise(value) in haystack else [normalise(value)]
 
 
+def missing_from(value: str, result: Any) -> list[str]:
+    """What of `value` is not in this tool result (or case text): empty when the value is backed by it."""
+    return missing_facts(value, normalise("\n".join(leaves(result))))
+
+
 def is_cited(value: str, result: Any) -> bool:
     """Is `value` backed by this tool result? "pid 472 'cat /etc/shadow'" is when 472 and /etc/shadow are in it,
     however the words around them are put."""
-    return not missing_facts(value, normalise("\n".join(leaves(result))))
+    return not missing_from(value, result)
