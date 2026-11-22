@@ -27,3 +27,6 @@ models:
   bonsai-2:4b:
     num_ctx: 65536
     num_gpu: 999
+  lfm3:latest:
+    num_ctx: 65536
+    num_gpu: 999

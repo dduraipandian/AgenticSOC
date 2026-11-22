@@ -9,6 +9,7 @@ from pydantic import Field
 from pipeline.soc_agent.agent import Agent
 from pipeline.soc_agent.providers.gemini import Gemini
 from pipeline.soc_agent.tasks import TaskOption
+from pipeline.soc_agent.tools.default import SUBMIT_INVESTIGATION
 from pipeline.soc_agent.tools.tools import Tool, ToolArgs
 
 HOST = {"host": "build-01", "role": "ci-build-server"}
@@ -76,7 +77,12 @@ class InlinePromptTask(TaskOption):
 
 
 def make_agent(
-    responses, get_host=lambda args: HOST, max_iteration: int = 3, finish_tool=None, **agent_options
+    responses,
+    get_host=lambda args: HOST,
+    max_iteration: int = 3,
+    finish_tool=None,
+    extra_tools: dict | None = None,
+    **agent_options,
 ):
     """An agent on a scripted Gemini, and run(question) to execute the test task with it."""
     provider = Gemini({"default_model": MODEL})
@@ -87,7 +93,8 @@ def make_agent(
         prompt=Path("inline"),
         provider=provider,
         finish_tool=finish_tool,
-        tools={"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)},
+        tools={"get_host": Tool("get_host", "Look up an endpoint by hostname.", HostArgs, get_host)}
+        | (extra_tools or {}),
     )
     agent = Agent(max_iteration=max_iteration, **agent_options)
     return (lambda question: agent.execute(question, task)), provider._client.models
@@ -127,7 +134,9 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
     assert [c.role for c in contents] == ["user", "model", "user"]
     assert contents[0].parts[0].text == "What kind of machine is build-01?"
     assert contents[1].parts[0].function_call.name == "get_host"  # the model's turn, kept as it was
-    assert function_responses(contents[2]) == [("get_host", {"untrusted_data": HOST})]  # S8: marked as data
+    assert function_responses(contents[2]) == [
+        ("get_host", {"untrusted_data": HOST, "tool_step": 2})
+    ]  # S8: marked as data
 
     # flat events, in order: what the UI draws as request -> model -> tool -> model
     request, *steps, end = result.execution_tracing
@@ -137,9 +146,9 @@ def test_a_tool_call_is_run_and_its_result_goes_back_to_the_model():
         "What kind of machine is build-01?",
     )
     assert [(e["step"], e["type"], e.get("name"), e["error"]) for e in steps] == [
-        (0, "model", None, None),
-        (0, "tool", "get_host", None),
         (1, "model", None, None),
+        (2, "tool", "get_host", None),  # every model turn and every tool call gets its own step
+        (3, "model", None, None),
     ]
     assert (end["type"], end["status"]) == ("result", "success")  # the UI stops on this
     assert steps[0]["tool_calls"] == ["get_host"]
@@ -364,3 +373,35 @@ def test_the_investigation_stops_when_its_time_budget_is_spent():
     assert "300s" in result.response  # says which limit ended it, without pinning the wording
     assert len(models.requests) == 1
     assert result.execution_tracing[-1]["type"] == "result"
+
+
+def submit(*facts: dict) -> types.GenerateContentResponse:
+    args = {"verdict": "benign", "confidence": "high", "rationale": "a CI server", "evidence": list(facts)}
+    return calls(("submit_investigation", args))
+
+
+def test_evidence_must_cite_a_tool_result_and_is_verified_only_when_its_value_is_there():
+    run, models = make_agent(
+        [
+            calls(("get_host", {"host": "build-01"})),  # model step 1, tool_step 2
+            submit({"fact": "role", "value": "ci-build-server", "step": 9}),  # no tool_step 9: refused
+            submit(
+                {"fact": "role", "value": "ci-build-server", "step": 2},
+                {"fact": "host", "value": "prod-db-01", "step": 2},  # a real step, but not its value
+            ),
+        ],
+        max_iteration=5,
+        finish_tool="submit_investigation",
+        extra_tools={"submit_investigation": SUBMIT_INVESTIGATION},
+    )
+
+    result = run("Is build-01 compromised?")
+
+    contents, _ = models.requests[2]
+    [(_, refused)] = function_responses(contents[-1])
+    assert "cites tool_step 9, which is not a tool result" in refused["untrusted_data"]["error"]
+    assert result.status == "success"
+    assert [(f["value"], f["verified"]) for f in result.response["evidence"]] == [
+        ("ci-build-server", True),
+        ("prod-db-01", False),
+    ]

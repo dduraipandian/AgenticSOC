@@ -11,10 +11,12 @@ re-graded and the report reads the newest version of each grader.
 """
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any
 
+from pipeline.soc_agent.citations import leaves as _leaves
+from pipeline.soc_agent.citations import missing_facts
+from pipeline.soc_agent.citations import normalise as _normalise
 from pipeline.soc_agent.evals.labels import LABEL_TO_VERDICT
 
 
@@ -36,21 +38,6 @@ def _events(run: dict, kind: str) -> list[dict]:
 def _finish_tool(run: dict, default_finish_tool: str = "submit_investigation") -> str:
     requests = _events(run, "request")
     return (requests[0].get("finish_tool") if requests else None) or default_finish_tool
-
-
-def _normalise(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
-def _leaves(value: Any) -> list[str]:
-    """The string and number values inside a value, at any depth. Booleans and nulls carry no fact to check."""
-    if isinstance(value, dict):
-        return [leaf for v in value.values() for leaf in _leaves(v)]
-    if isinstance(value, list | tuple):
-        return [leaf for v in value for leaf in _leaves(v)]
-    if isinstance(value, bool) or value is None:
-        return []
-    return [str(value)]  # numbers are compared as text
 
 
 def _evidence_values(evidence: Any) -> list[str]:
@@ -137,17 +124,6 @@ def grade_process(run: dict, alerts: list[dict]) -> Grade:
 GROUNDING_VERSION = 1
 
 
-_TOKEN_SPLIT = re.compile(r"[\s,;()\[\]{}<>'\"`=|]+")
-_EDGE = ".:-"  # sentence punctuation around a token, not part of it
-
-
-def _facts(value: str) -> list[str]:
-    """The concrete facts in an evidence value: tokens with a digit or one of / . _ - @ (pids, paths, hosts, users
-    like arun.m, times, techniques). Plain words are not facts; an LLM judge is for reading those."""
-    tokens = (t.strip(_EDGE) for t in _TOKEN_SPLIT.split(_normalise(value)))
-    return [t for t in tokens if t and re.search(r"[\d/._@-]", t)]
-
-
 def grade_grounding(run: dict) -> Grade:
     """Is every evidence value backed by what the agent was shown (the case text or a tool result)?
     - A value with concrete facts is supported when each fact appears there, so "pid 472 'cat /etc/shadow' as root"
@@ -164,12 +140,10 @@ def grade_grounding(run: dict) -> Grade:
     values = _evidence_values(run.get("evidence"))
     unsupported, missing = [], {}
     for value in values:
-        facts = _facts(value)
-        absent = [f for f in facts if f not in haystack] if facts else [_normalise(value)]
-        if facts and not absent or not facts and _normalise(value) in haystack:
-            continue
-        unsupported.append(value)
-        missing[value] = absent
+        absent = missing_facts(value, haystack)
+        if absent:
+            unsupported.append(value)
+            missing[value] = absent
 
     details: dict = {"unsupported": unsupported, "missing": missing}
     if not values:

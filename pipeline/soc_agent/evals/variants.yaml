@@ -18,3 +18,7 @@ qwen2b:
 gemma-e2b:
   task: soc_investigation
   model: gemma4:e2b-it-q4_K_M
+
+lfm3:
+  task: soc_investigation
+  model: lfm3:latest
