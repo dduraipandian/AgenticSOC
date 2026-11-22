@@ -48,13 +48,13 @@ def add_eval_routes(app: FastAPI, Conn) -> None:
         run = _run(conn, run_id)
         return eval_mapping.run_detail(run, eval_store.latest_grades(conn, [run_id]).get(run_id, {}))
 
-    @app.get("/evals/runs/{run_id}/steps/{index}", response_model=StepDetail)
-    def get_run_step(run_id: UUID, index: Annotated[int, Path(ge=0)], conn: Conn):
+    @app.get("/evals/runs/{run_id}/trace/{trace_seq}", response_model=StepDetail)
+    def get_run_step(run_id: UUID, trace_seq: Annotated[int, Path(ge=0)], conn: Conn):
         steps = _run(conn, run_id)["steps"] or []
-        event = steps[index] if index < len(steps) else None
+        event = steps[trace_seq] if trace_seq < len(steps) else None
         step = mapping.step_detail(str(run_id), event) if event else None
-        if step is None:  # no such index, or a trace event that is not a step
-            raise NotFound(f"step {index} of run {run_id} not found")
+        if step is None:  # no such trace event, or a trace event that is not a step
+            raise NotFound(f"trace event {trace_seq} of run {run_id} is not a step")
         return step
 
     @app.put("/evals/runs/{run_id}/review", response_model=EvalRunDetail)

@@ -114,7 +114,7 @@ def run_detail(run: dict, grades: dict[str, Grade]) -> EvalRunDetail:
         confidence=run["confidence"],
         rationale=run["rationale"],
         error=run["error"],
-        evidence=mapping.evidence_items(run["evidence"], run["completed_at"]),
+        evidence=mapping.evidence_items(run["evidence"]),
         grades=[
             EvalGrade(grader=g.grader, version=g.version, passed=g.passed, details=g.details)
             for g in sorted(grades.values(), key=lambda g: order.get(g.grader, len(order)))

@@ -1,4 +1,3 @@
-import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -94,7 +93,8 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
         if event.get("type") == "request":  # what the agent was asked; its text is in the step detail
             steps.append(
                 AgentStep(
-                    index=event["seq"],
+                    trace_seq=event["seq"],
+                    step=0,  # the case: evidence cites it as step 0
                     kind="request",
                     name="request",
                     started_at=_ms_to_datetime(event["at"]),
@@ -121,7 +121,8 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
             else:
                 summary = "answered"
             step = AgentStep(
-                index=event["seq"],
+                trace_seq=event["seq"],
+                step=event.get("step"),
                 kind="llm",
                 name="model",
                 started_at=ended_at - timedelta(milliseconds=duration),
@@ -134,7 +135,8 @@ def agent_steps(trace: list[dict]) -> list[AgentStep]:
         else:
             args = ", ".join(f"{k}={v}" for k, v in (event.get("args") or {}).items())
             step = AgentStep(
-                index=event["seq"],
+                trace_seq=event["seq"],
+                step=event.get("step"),
                 kind="tool",
                 name=event["name"],
                 started_at=ended_at - timedelta(milliseconds=duration),
@@ -159,7 +161,7 @@ def step_detail(investigation_id: str, event: dict) -> StepDetail | None:
         return None
     return StepDetail(
         investigation_id=investigation_id,
-        index=event["seq"],
+        trace_seq=event["seq"],
         kind=kind,
         name=event["name"] if kind == "tool" else {"llm": "model", "request": "request"}[kind],
         text=event.get("text"),
@@ -170,24 +172,17 @@ def step_detail(investigation_id: str, event: dict) -> StepDetail | None:
     )
 
 
-def evidence_items(evidence: Any, captured_at: datetime) -> list[EvidenceItem]:
-    """INTERIM: the agent submits evidence as {fact: value}, not tied to tool calls yet, so each fact becomes
-    one item attributed to the submit. Once the agent cites tool calls, map those here instead."""
-    if not isinstance(evidence, dict):
+def evidence_items(evidence: Any) -> list[EvidenceItem]:
+    """The agent's cited evidence, [{fact, value, step, verified}]. Evidence from before citations was
+    {fact: value}: it is still shown, with no step and not verified either way."""
+    if isinstance(evidence, dict):
+        return [EvidenceItem(fact=f, value=str(v), step=None, verified=None) for f, v in evidence.items()]
+    if not isinstance(evidence, list):
         return []
-    items = []
-    for fact, value in evidence.items():
-        excerpt = f"{fact}: {value}"
-        items.append(
-            EvidenceItem(
-                tool="submit_investigation",
-                args={"fact": fact},
-                result_digest=hashlib.sha256(excerpt.encode()).hexdigest(),
-                result_excerpt=excerpt,
-                captured_at=captured_at,
-            )
-        )
-    return items
+    return [
+        EvidenceItem(fact=e["fact"], value=e["value"], step=e.get("step"), verified=e.get("verified"))
+        for e in evidence
+    ]
 
 
 def investigation_view(run: dict) -> InvestigationView:
@@ -199,7 +194,7 @@ def investigation_view(run: dict) -> InvestigationView:
         verdict=run["verdict"],
         confidence=CONFIDENCE[run["confidence"]],
         rationale=run["rationale"],
-        evidence=evidence_items(run["evidence"], run["completed_at"]),
+        evidence=evidence_items(run["evidence"]),
         evidence_hash=run["evidence_hash"],
         completed_at=run["completed_at"],
         steps=agent_steps(run["steps"]),

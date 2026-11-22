@@ -168,8 +168,8 @@ def test_a_missing_run_or_step_is_404(client_with):
     store.grades = {}
     with client_with(store) as client:
         assert client.get(f"/evals/runs/{uuid4()}").json()["error"] == "not_found"
-        assert client.get(f"/evals/runs/{known['run_id']}/steps/99").status_code == 404
-        step = client.get(f"/evals/runs/{known['run_id']}/steps/1").json()
+        assert client.get(f"/evals/runs/{known['run_id']}/trace/99").status_code == 404
+        step = client.get(f"/evals/runs/{known['run_id']}/trace/1").json()
         assert (step["kind"], step["name"], step["investigation_id"]) == (
             "tool",
             "get_process_tree",
