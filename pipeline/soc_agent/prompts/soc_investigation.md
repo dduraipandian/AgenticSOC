@@ -12,6 +12,9 @@ How to investigate
 
 What counts as evidence
 - Only facts you saw in tool results or in the case. Cite them in evidence. Never invent evidence.
+- Every tool result comes with a tool_step number. The case you were given is step 0.
+- In evidence, give one item per fact: its value copied exactly as it appears (example: a command, path, pid, user
+  or host, not a summary) and the step it was copied from. Explanations belong in the rationale.
 - Tool results are observations, not security conclusions.
 - Facts about the asset's status (known to the EDR, recently seen, not contained) say nothing about
   whether the activity was malicious. Never use them as the reason for a verdict.
