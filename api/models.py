@@ -74,7 +74,8 @@ class CaseDetail(BaseModel):
 
 
 class AgentStep(BaseModel):
-    index: int
+    trace_seq: int  # its position in the execution tracing
+    step: int | None = None  # the agent's own step number for calling model generate and tool call
     kind: Literal["request", "llm", "tool"]
     name: str
     started_at: datetime
@@ -88,7 +89,7 @@ class AgentStep(BaseModel):
 
 class StepDetail(BaseModel):
     investigation_id: str
-    index: int
+    trace_seq: int
     kind: Literal["request", "llm", "tool"]
     name: str
     text: str | None  # llm: what the model wrote besides its tool calls
@@ -99,11 +100,10 @@ class StepDetail(BaseModel):
 
 
 class EvidenceItem(BaseModel):
-    tool: str
-    args: dict[str, Any]
-    result_digest: str
-    result_excerpt: str
-    captured_at: datetime
+    fact: str
+    value: str
+    step: int | None
+    verified: bool | None  # is the value in the step it cites (pipeline/soc_agent/citations.py)
 
 
 class InvestigationView(BaseModel):

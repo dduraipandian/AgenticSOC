@@ -7,7 +7,12 @@ from pipeline.soc_agent.main import build_tools
 from pipeline.soc_agent.tasks import BASE_AGENT_PATH, TaskConfig, TaskOption
 from tests.test_vendor_tools import VENDOR_CONFIG
 
-SUBMIT = {"verdict": "benign", "confidence": "low", "rationale": "test", "evidence": {"x": "y"}}
+SUBMIT = {
+    "verdict": "benign",
+    "confidence": "low",
+    "rationale": "test",
+    "evidence": [{"fact": "case", "value": "Case 3", "step": 0}],
+}
 
 APP_CONFIG = SimpleNamespace(
     # the task's EDR tools are built but never called: the stand-in model submits straight away

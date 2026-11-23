@@ -11,10 +11,12 @@ re-graded and the report reads the newest version of each grader.
 """
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any
 
+from pipeline.soc_agent.citations import leaves as _leaves
+from pipeline.soc_agent.citations import missing_facts, missing_from
+from pipeline.soc_agent.citations import normalise as _normalise
 from pipeline.soc_agent.evals.labels import LABEL_TO_VERDICT
 
 
@@ -36,21 +38,6 @@ def _events(run: dict, kind: str) -> list[dict]:
 def _finish_tool(run: dict, default_finish_tool: str = "submit_investigation") -> str:
     requests = _events(run, "request")
     return (requests[0].get("finish_tool") if requests else None) or default_finish_tool
-
-
-def _normalise(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
-def _leaves(value: Any) -> list[str]:
-    """The string and number values inside a value, at any depth. Booleans and nulls carry no fact to check."""
-    if isinstance(value, dict):
-        return [leaf for v in value.values() for leaf in _leaves(v)]
-    if isinstance(value, list | tuple):
-        return [leaf for v in value for leaf in _leaves(v)]
-    if isinstance(value, bool) or value is None:
-        return []
-    return [str(value)]  # numbers are compared as text
 
 
 def _evidence_values(evidence: Any) -> list[str]:
@@ -134,42 +121,75 @@ def grade_process(run: dict, alerts: list[dict]) -> Grade:
     return Grade("process", PROCESS_VERSION, all(details.values()), details)
 
 
-GROUNDING_VERSION = 1
+# 2: a cited fact must be in the step it cites, not just anywhere in the run
+# 3: a result's keys count as shown, so a value copied with its key ("first_seen: ...") is supported
+GROUNDING_VERSION = 3
 
 
-_TOKEN_SPLIT = re.compile(r"[\s,;()\[\]{}<>'\"`=|]+")
-_EDGE = ".:-"  # sentence punctuation around a token, not part of it
+def _cited(evidence: Any) -> bool:
+    """Evidence as the submit tool takes it today: [{fact, value, step}]. Older runs sent {name: value}."""
+    return (
+        isinstance(evidence, list)
+        and bool(evidence)
+        and all(isinstance(f, dict) and "step" in f for f in evidence)
+    )
 
 
-def _facts(value: str) -> list[str]:
-    """The concrete facts in an evidence value: tokens with a digit or one of / . _ - @ (pids, paths, hosts, users
-    like arun.m, times, techniques). Plain words are not facts; an LLM judge is for reading those."""
-    tokens = (t.strip(_EDGE) for t in _TOKEN_SPLIT.split(_normalise(value)))
-    return [t for t in tokens if t and re.search(r"[\d/._@-]", t)]
+def _citable(run: dict, finish: str) -> dict[int, Any]:
+    """What a fact may cite, as the agent loop allows it: step 0 is the case text, then each tool result that ran.
+    A failed or rejected call is nothing to cite, and the finish tool only echoes the submitted arguments."""
+    citable: dict[int, Any] = {0: "\n".join(e.get("text") or "" for e in _events(run, "request"))}
+    for e in _events(run, "tool"):
+        if e["name"] != finish and not e.get("error") and e.get("step") is not None:
+            citable[e["step"]] = e.get("result")
+    return citable
+
+
+def _grade_cited(run: dict, evidence: list[dict], finish: str) -> Grade:
+    citable = _citable(run, finish)
+    unsupported, missing = [], {}
+    for fact in evidence:
+        step, value = fact.get("step"), str(fact.get("value") or "")
+        label = f"{value} (step {step})"
+        absent = (
+            missing_from(value, citable[step]) if step in citable else [f"step {step} is not a tool result"]
+        )
+        if absent:
+            unsupported.append(label)
+            missing[label] = absent
+    return Grade(
+        "grounding", GROUNDING_VERSION, not unsupported, {"unsupported": unsupported, "missing": missing}
+    )
 
 
 def grade_grounding(run: dict) -> Grade:
-    """Is every evidence value backed by what the agent was shown (the case text or a tool result)?
-    - A value with concrete facts is supported when each fact appears there, so "pid 472 'cat /etc/shadow' as root"
-      passes when 472 and /etc/shadow were shown, however the sentence around them is worded.
-    - A value with no such facts ("configured sudo privileges") must appear as written.
-    The finish tool's own result is left out: it only echoes the submitted arguments."""
+    """Is every evidence value backed by what the agent was shown?
+    - Cited evidence ([{fact, value, step}]): each value must be in the step it cites, checked with the same
+      function the agent loop uses to mark a fact verified, so the portal and this grade agree.
+    - Older {name: value} evidence: each value must be somewhere in the case text or a tool result.
+    A value with concrete facts is supported when each fact appears, so "pid 472 'cat /etc/shadow' as root" passes
+    when 472 and /etc/shadow were shown, however the sentence around them is worded. A value with no such facts
+    ("configured sudo privileges") must appear as written."""
     finish = _finish_tool(run)
+    if _cited(run.get("evidence")):
+        return _grade_cited(run, run["evidence"], finish)
+
     sources = [e.get("text") or "" for e in _events(run, "request")]
     sources += [
-        leaf for e in _events(run, "tool") if e["name"] != finish for leaf in _leaves(e.get("result"))
+        leaf
+        for e in _events(run, "tool")
+        if e["name"] != finish
+        for leaf in _leaves(e.get("result"), keys=True)
     ]
     haystack = _normalise("\n".join(sources))
 
     values = _evidence_values(run.get("evidence"))
     unsupported, missing = [], {}
     for value in values:
-        facts = _facts(value)
-        absent = [f for f in facts if f not in haystack] if facts else [_normalise(value)]
-        if facts and not absent or not facts and _normalise(value) in haystack:
-            continue
-        unsupported.append(value)
-        missing[value] = absent
+        absent = missing_facts(value, haystack)
+        if absent:
+            unsupported.append(value)
+            missing[value] = absent
 
     details: dict = {"unsupported": unsupported, "missing": missing}
     if not values:

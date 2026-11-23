@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from common.utils import Timer
+from pipeline.soc_agent.citations import is_cited
 from pipeline.soc_agent.tasks import TaskOption
 from pipeline.soc_agent.tools.tools import Tool
 
@@ -115,7 +116,11 @@ class Agent:
             self.clock()
         )  # monotonic: for the deadline and the duration, meaningless outside this process
         agent_response.started_at = time.time() * 1000
-        for step in range(max_iteration):
+        step = 0
+        # what the submitted evidence may cite: step 0 is the case text, then each tool result by its tool_step
+        tool_results: dict[int, Any] = {0: question}
+        for _ in range(max_iteration):
+            step += 1
             try:
                 self.check_deadline(started)
                 with Timer() as t:
@@ -229,7 +234,7 @@ class Agent:
             for index, function_call in enumerate(function_calls):
                 function_name, function_args = task_config.provider.get_function_details(function_call)
                 error = None
-
+                step += 1
                 try:
                     self.check_deadline(started)
                     with Timer() as f:
@@ -245,6 +250,11 @@ class Agent:
                             )
 
                         function_response = self.execute_tool(task_config.tools, function_name, function_args)
+                        if function_name == finish_tool:
+                            self.validate_evidence(tool_results, function_response)
+                        else:
+                            tool_results[step] = function_response
+
                 except AgentRuntimeError as exc:
                     log.warning("rejected tool call %s: %s", function_name, exc)
                     error = str(exc)
@@ -282,7 +292,7 @@ class Agent:
                     )
 
                 formatted_response = task_config.provider.get_function_response(
-                    function_call, {"untrusted_data": function_response}
+                    function_call, {"untrusted_data": function_response, "tool_step": step}
                 )
                 function_response_parts.append(formatted_response)
 
@@ -317,3 +327,22 @@ class Agent:
     def check_deadline(self, started: float) -> None:
         if self.clock() - started > self.max_seconds:
             raise ProcessDeadlineError(f"investigation exceeded {self.max_seconds}s time limit")
+
+    def validate_evidence(self, tool_results: dict[int, Any], response: Any):
+        """A fact citing a step that is not a tool result is refused, so the model can fix it. A fact whose value
+        is not in the result it cites is kept but marked verified: False, for the analyst and the eval to see."""
+        if not isinstance(response, dict):
+            return
+
+        if response.get("verdict"):
+            evidences = response.get("evidence", [])
+            for evidence in evidences:
+                evidence_step = evidence["step"]
+                evidence_fact = evidence["fact"]
+
+                if evidence_step not in tool_results:
+                    raise AgentRuntimeError(
+                        f"fact '{evidence_fact}' cites tool_step {evidence_step}, which is not a tool result in "
+                        f"this investigation (step 0 is the case itself). Cite the tool_step shown beside the result you copied the value from."
+                    )
+                evidence["verified"] = is_cited(evidence["value"], tool_results[evidence_step])

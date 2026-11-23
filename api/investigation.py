@@ -176,13 +176,13 @@ def create_app(
             last_failure=mapping.investigation_failure(runs[0]) if newest_failed else None,
         )
 
-    @app.get("/investigations/{investigation_id}/steps/{index}", response_model=StepDetail)
-    def get_step(investigation_id: UUID, index: Annotated[int, Path(ge=0)], conn: Conn):
+    @app.get("/investigations/{investigation_id}/trace/{trace_seq}", response_model=StepDetail)
+    def get_step(investigation_id: UUID, trace_seq: Annotated[int, Path(ge=0)], conn: Conn):
         # ge=0: Postgres reads a negative index from the end of the array
-        event = inv_store.get_step(conn, investigation_id, index)
+        event = inv_store.get_step(conn, investigation_id, trace_seq)
         step = mapping.step_detail(str(investigation_id), event) if event else None
-        if step is None:  # no such run, no such index, or a trace event that is not a step
-            raise NotFound(f"step {index} of investigation {investigation_id} not found")
+        if step is None:  # no such run, no such trace event, or a trace event that is not a step
+            raise NotFound(f"trace event {trace_seq} of investigation {investigation_id} is not a step")
         return step
 
     @app.post("/investigations/{case_id}", status_code=202, response_model=InvestigationStarted)

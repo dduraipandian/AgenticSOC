@@ -1,4 +1,4 @@
-from api.mapping import agent_steps, step_detail
+from api.mapping import agent_steps, evidence_items, step_detail
 
 AT = 1795058400000.0  # epoch ms
 RUN = "01a1ff00-0000-7000-8000-000000000000"
@@ -54,7 +54,7 @@ def test_the_step_list_stays_small_and_the_detail_has_the_text_and_result():
 
 
 def test_only_request_model_and_tool_events_are_steps_with_detail():
-    assert step_detail(RUN, END) is None  # its index exists in the trace, but it is not a step
+    assert step_detail(RUN, END) is None  # its trace_seq exists, but it is not a step
 
 
 def test_the_request_is_the_first_step_and_its_text_is_in_the_detail():
@@ -68,7 +68,8 @@ def test_the_request_is_the_first_step_and_its_text_is_in_the_detail():
 
     first, *_ = agent_steps([request, MODEL | {"seq": 1}, TOOL | {"seq": 2}])
 
-    assert (first.index, first.kind, first.name, first.tokens_in, first.duration_ms) == (
+    assert (first.trace_seq, first.step, first.kind, first.name, first.tokens_in, first.duration_ms) == (
+        0,
         0,
         "request",
         "request",
@@ -101,3 +102,12 @@ def test_a_reminded_text_answer_is_marked_on_its_model_step():
     [model] = agent_steps([text_answer, reminder])
 
     assert model.summary == "answered without a tool call; reminded"
+
+
+def test_cited_evidence_keeps_its_step_and_older_fact_value_evidence_still_shows():
+    cited = [{"fact": "user", "value": "arun.m", "step": 4, "verified": False}]
+    [item] = evidence_items(cited)
+    assert (item.fact, item.value, item.step, item.verified) == ("user", "arun.m", 4, False)
+
+    [old] = evidence_items({"pid": 472})  # before citations: no step, neither verified nor not
+    assert (old.fact, old.value, old.step, old.verified) == ("pid", "472", None, None)
